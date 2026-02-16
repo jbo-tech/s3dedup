@@ -2,6 +2,7 @@
 
 import sys
 
+import boto3
 import click
 from rich.console import Console
 
@@ -16,8 +17,17 @@ console = Console(stderr=True)
 
 @click.group()
 @click.version_option(version="0.1.0")
-def cli():
+@click.option(
+    "--endpoint-url",
+    envvar="AWS_ENDPOINT_URL",
+    default=None,
+    help="URL du endpoint S3 (pour les services S3-compatibles).",
+)
+@click.pass_context
+def cli(ctx, endpoint_url):
     """Détection de doublons dans un bucket S3."""
+    ctx.ensure_object(dict)
+    ctx.obj["endpoint_url"] = endpoint_url
 
 
 @cli.command()
@@ -30,7 +40,8 @@ def cli():
     default="s3dedup.duckdb",
     help="Chemin vers la base DuckDB.",
 )
-def scan(bucket, prefix, db_path):
+@click.pass_context
+def scan(ctx, bucket, prefix, db_path):
     """Scanner un bucket S3 et indexer les objets."""
     try:
         conn = database.connect(db_path)
@@ -38,14 +49,18 @@ def scan(bucket, prefix, db_path):
         console.print(f"[red]Erreur DB :[/red] {e}")
         sys.exit(1)
 
+    s3_client = _make_s3_client(ctx.obj["endpoint_url"])
+
     try:
-        count = scan_bucket(bucket, conn, prefix=prefix)
+        count = scan_bucket(bucket, conn, prefix=prefix, s3_client=s3_client)
         console.print(
             f"[green]Scan terminé :[/green] {count} objets indexés."
         )
 
         # Passe 3 : hash des candidats multipart
-        hashed = hash_multipart_candidates(bucket, conn)
+        hashed = hash_multipart_candidates(
+            bucket, conn, s3_client=s3_client,
+        )
         if hashed:
             console.print(
                 f"[green]Hash passe 3 :[/green] {hashed} objets hashés."
@@ -62,6 +77,14 @@ def scan(bucket, prefix, db_path):
         sys.exit(1)
     finally:
         conn.close()
+
+
+def _make_s3_client(endpoint_url=None):
+    """Crée un client S3 boto3, avec endpoint custom si fourni."""
+    kwargs = {}
+    if endpoint_url:
+        kwargs["endpoint_url"] = endpoint_url
+    return boto3.client("s3", **kwargs)
 
 
 @cli.command()

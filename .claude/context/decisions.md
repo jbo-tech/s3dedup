@@ -37,3 +37,9 @@ Technical decisions and their context. Added via `/retro`.
 **Context**: Approche la plus sécurisée et la plus simple. Pas de cross-account.
 **Alternatives considered**: Gestion custom des credentials
 **Date**: 2026-02-16
+
+### Support endpoint S3-compatible (--endpoint-url)
+**Decision**: Option globale `--endpoint-url` sur le groupe CLI + support envvar `AWS_ENDPOINT_URL`
+**Context**: Le bucket cible est sur Mega.io (S3-compatible), pas AWS. `aws sts get-caller-identity` échoue car le endpoint STS n'existe pas chez Mega.
+**Alternatives considered**: Forcer l'usage de LocalStack pour les tests locaux uniquement
+**Date**: 2026-02-16
