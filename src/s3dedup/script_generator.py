@@ -1,5 +1,6 @@
 """ScriptGenerator — génération du script bash de suppression."""
 
+import posixpath
 from datetime import datetime
 
 import duckdb
@@ -8,35 +9,65 @@ from s3dedup.db import get_all_duplicates, get_stats
 from s3dedup.models import DuplicateGroup, ObjectInfo
 from s3dedup.utils import human_size
 
-# Politiques de rétention : quelle copie garder
-KEEP_POLICIES = {
-    "oldest": lambda objs: min(objs, key=lambda o: o.last_modified),
-    "newest": lambda objs: max(objs, key=lambda o: o.last_modified),
-    "largest": lambda objs: max(objs, key=lambda o: o.size),
+# Critères de rétention disponibles.
+# Chaque critère retourne une clé de tri (le min gagne).
+KEEP_CRITERIA = {
+    "shortest": lambda o: len(posixpath.basename(o.key)),
+    "oldest": lambda o: o.last_modified,
+    "newest": lambda o: -o.last_modified.timestamp(),
 }
+
+VALID_CRITERIA = set(KEEP_CRITERIA.keys())
+DEFAULT_KEEP = "shortest,oldest"
+
+
+def parse_keep(keep: str) -> list[str]:
+    """Parse et valide une chaîne de critères séparés par des virgules."""
+    criteria = [c.strip() for c in keep.split(",")]
+    invalid = [c for c in criteria if c not in VALID_CRITERIA]
+    if invalid:
+        valid = ", ".join(sorted(VALID_CRITERIA))
+        raise click_bad_param(
+            f"Critères invalides : {', '.join(invalid)}. "
+            f"Valides : {valid}"
+        )
+    return criteria
+
+
+def click_bad_param(msg: str) -> Exception:
+    """Crée une exception click pour un paramètre invalide."""
+    import click
+    return click.BadParameter(msg)
 
 
 def _select_to_delete(
     group: DuplicateGroup,
-    keep: str,
+    criteria: list[str],
 ) -> tuple[ObjectInfo, list[ObjectInfo]]:
-    """Sélectionne l'objet à garder et ceux à supprimer."""
-    policy = KEEP_POLICIES[keep]
-    keeper = policy(group.objects)
+    """Sélectionne l'objet à garder via tri multi-critères."""
+    sort_key = _build_sort_key(criteria)
+    keeper = min(group.objects, key=sort_key)
     to_delete = [o for o in group.objects if o.key != keeper.key]
     return keeper, to_delete
+
+
+def _build_sort_key(criteria: list[str]):
+    """Construit une fonction de tri composite."""
+    fns = [KEEP_CRITERIA[c] for c in criteria]
+    return lambda o: tuple(fn(o) for fn in fns)
 
 
 def generate_delete_script(
     conn: duckdb.DuckDBPyConnection,
     bucket: str,
-    keep: str = "oldest",
+    keep: str = DEFAULT_KEEP,
     output: str = "delete_duplicates.sh",
 ) -> str:
     """Génère un script bash de suppression des doublons.
 
     Retourne le contenu du script.
     """
+    criteria = parse_keep(keep)
     groups = get_all_duplicates(conn)
     stats = get_stats(conn)
 
@@ -46,11 +77,15 @@ def generate_delete_script(
     lines.append("#!/usr/bin/env bash")
     lines.append("# Script de suppression des doublons S3")
     lines.append(f"# Bucket : {bucket}")
-    lines.append(f"# Généré le : {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    lines.append(
+        f"# Généré le : {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
     lines.append(f"# Politique de rétention : --keep {keep}")
     lines.append(f"# Groupes de doublons : {stats.duplicate_groups}")
     lines.append(f"# Objets à supprimer : {stats.duplicate_objects}")
-    lines.append(f"# Espace récupérable : {human_size(stats.wasted_bytes)}")
+    lines.append(
+        f"# Espace récupérable : {human_size(stats.wasted_bytes)}"
+    )
     lines.append("#")
     lines.append("# ATTENTION : Vérifiez ce script avant exécution !")
     lines.append("# Les suppressions S3 sont IRRÉVERSIBLES.")
@@ -68,10 +103,12 @@ def generate_delete_script(
         return content
 
     for i, group in enumerate(groups, 1):
-        keeper, to_delete = _select_to_delete(group, keep)
+        keeper, to_delete = _select_to_delete(group, criteria)
 
-        lines.append(f"# --- Groupe {i} ({len(group.objects)} copies,"
-                      f" {human_size(group.wasted_bytes)} récupérables)")
+        lines.append(
+            f"# --- Groupe {i} ({len(group.objects)} copies,"
+            f" {human_size(group.wasted_bytes)} récupérables)"
+        )
         lines.append(f"# Fingerprint : {group.fingerprint}")
         lines.append(f"# Conservé    : {keeper.key}")
 
@@ -83,9 +120,11 @@ def generate_delete_script(
             )
         lines.append("")
 
-    lines.append(f"echo 'Terminé : {stats.duplicate_objects}"
-                  f" objets supprimés,"
-                  f" {human_size(stats.wasted_bytes)} récupérés.'")
+    lines.append(
+        f"echo 'Terminé : {stats.duplicate_objects}"
+        f" objets supprimés,"
+        f" {human_size(stats.wasted_bytes)} récupérés.'"
+    )
 
     content = "\n".join(lines) + "\n"
     _write_file(output, content)

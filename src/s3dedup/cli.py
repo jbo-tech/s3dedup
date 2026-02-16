@@ -76,7 +76,7 @@ def scan(ctx, bucket, prefix, db_path):
             "\n[dim]Étapes suivantes :[/dim]\n"
             f"  s3dedup report [--format table|json|csv] --db {db_path}\n"
             f"  s3dedup generate-script --bucket {bucket}"
-            f" --keep oldest|newest|largest --db {db_path}"
+            f" --keep shortest,oldest --db {db_path}"
         )
     except Exception as e:
         console.print(f"[red]Erreur scan :[/red] {e}")
@@ -126,9 +126,8 @@ def report(fmt, db_path):
 )
 @click.option(
     "--keep",
-    type=click.Choice(["oldest", "newest", "largest"]),
-    default="oldest",
-    help="Politique de rétention.",
+    default="shortest,oldest",
+    help="Critères de rétention (shortest,oldest,newest).",
 )
 @click.option(
     "--db", "db_path",
