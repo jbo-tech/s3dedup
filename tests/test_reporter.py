@@ -45,7 +45,7 @@ class TestJsonReport:
         assert "groups" in data
 
     def test_stats_correct(self, db_with_duplicates):
-        data = json.loads(generate_report(db_with_duplicates))
+        data = json.loads(generate_report(db_with_duplicates, fmt="json"))
         stats = data["stats"]
         assert stats["total_objects"] == 3
         assert stats["duplicate_groups"] == 1
@@ -53,16 +53,36 @@ class TestJsonReport:
         assert stats["wasted_bytes"] == 1000
 
     def test_group_content(self, db_with_duplicates):
-        data = json.loads(generate_report(db_with_duplicates))
+        data = json.loads(generate_report(db_with_duplicates, fmt="json"))
         groups = data["groups"]
         assert len(groups) == 1
         assert groups[0]["fingerprint"] == "aaa"
         assert len(groups[0]["objects"]) == 2
 
     def test_empty_db(self, empty_db):
-        data = json.loads(generate_report(empty_db))
+        data = json.loads(generate_report(empty_db, fmt="json"))
         assert data["stats"]["duplicate_groups"] == 0
         assert data["groups"] == []
+
+
+class TestTableReport:
+    def test_contains_summary(self, db_with_duplicates):
+        result = generate_report(db_with_duplicates, fmt="table")
+        assert "Résumé" in result
+        assert "Espace récupérable" in result
+
+    def test_contains_files(self, db_with_duplicates):
+        result = generate_report(db_with_duplicates, fmt="table")
+        assert "music/song.mp3" in result
+        assert "backup/song.mp3" in result
+
+    def test_empty_db(self, empty_db):
+        result = generate_report(empty_db, fmt="table")
+        assert "Aucun doublon" in result
+
+    def test_is_default_format(self, db_with_duplicates):
+        result = generate_report(db_with_duplicates)
+        assert "Résumé" in result
 
 
 class TestCsvReport:

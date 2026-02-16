@@ -6,10 +6,8 @@ import pytest
 
 from s3dedup.db import connect, upsert_objects
 from s3dedup.models import ObjectInfo
-from s3dedup.script_generator import (
-    _human_size,
-    generate_delete_script,
-)
+from s3dedup.script_generator import generate_delete_script
+from s3dedup.utils import human_size
 
 
 def _obj(key, size=100, etag="e1", multipart=False, last_modified=None):
@@ -98,16 +96,16 @@ class TestGenerateDeleteScript:
 
 class TestHumanSize:
     def test_bytes(self):
-        assert _human_size(500) == "500.0 o"
+        assert human_size(500) == "500.0 o"
 
     def test_kilobytes(self):
-        assert _human_size(2048) == "2.0 Ko"
+        assert human_size(2048) == "2.0 Ko"
 
     def test_megabytes(self):
-        assert _human_size(5 * 1024 * 1024) == "5.0 Mo"
+        assert human_size(5 * 1024 * 1024) == "5.0 Mo"
 
     def test_gigabytes(self):
-        assert _human_size(3 * 1024**3) == "3.0 Go"
+        assert human_size(3 * 1024**3) == "3.0 Go"
 
     def test_terabytes(self):
-        assert _human_size(9 * 1024**4) == "9.0 To"
+        assert human_size(9 * 1024**4) == "9.0 To"

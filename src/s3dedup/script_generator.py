@@ -6,6 +6,7 @@ import duckdb
 
 from s3dedup.db import get_all_duplicates, get_stats
 from s3dedup.models import DuplicateGroup, ObjectInfo
+from s3dedup.utils import human_size
 
 # Politiques de rétention : quelle copie garder
 KEEP_POLICIES = {
@@ -49,7 +50,7 @@ def generate_delete_script(
     lines.append(f"# Politique de rétention : --keep {keep}")
     lines.append(f"# Groupes de doublons : {stats.duplicate_groups}")
     lines.append(f"# Objets à supprimer : {stats.duplicate_objects}")
-    lines.append(f"# Espace récupérable : {_human_size(stats.wasted_bytes)}")
+    lines.append(f"# Espace récupérable : {human_size(stats.wasted_bytes)}")
     lines.append("#")
     lines.append("# ATTENTION : Vérifiez ce script avant exécution !")
     lines.append("# Les suppressions S3 sont IRRÉVERSIBLES.")
@@ -70,7 +71,7 @@ def generate_delete_script(
         keeper, to_delete = _select_to_delete(group, keep)
 
         lines.append(f"# --- Groupe {i} ({len(group.objects)} copies,"
-                      f" {_human_size(group.wasted_bytes)} récupérables)")
+                      f" {human_size(group.wasted_bytes)} récupérables)")
         lines.append(f"# Fingerprint : {group.fingerprint}")
         lines.append(f"# Conservé    : {keeper.key}")
 
@@ -84,7 +85,7 @@ def generate_delete_script(
 
     lines.append(f"echo 'Terminé : {stats.duplicate_objects}"
                   f" objets supprimés,"
-                  f" {_human_size(stats.wasted_bytes)} récupérés.'")
+                  f" {human_size(stats.wasted_bytes)} récupérés.'")
 
     content = "\n".join(lines) + "\n"
     _write_file(output, content)
@@ -97,12 +98,3 @@ def _write_file(path: str, content: str) -> None:
     with open(path, "w") as f:
         f.write(content)
     os.chmod(path, 0o755)
-
-
-def _human_size(size_bytes: int) -> str:
-    """Convertit des bytes en format lisible."""
-    for unit in ("o", "Ko", "Mo", "Go", "To"):
-        if abs(size_bytes) < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} Po"

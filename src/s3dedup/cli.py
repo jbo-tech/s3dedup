@@ -74,7 +74,7 @@ def scan(ctx, bucket, prefix, db_path):
         )
         console.print(
             "\n[dim]Étapes suivantes :[/dim]\n"
-            f"  s3dedup report --format json|csv --db {db_path}\n"
+            f"  s3dedup report [--format table|json|csv] --db {db_path}\n"
             f"  s3dedup generate-script --bucket {bucket}"
             f" --keep oldest|newest|largest --db {db_path}"
         )
@@ -96,8 +96,8 @@ def _make_s3_client(endpoint_url=None):
 @cli.command()
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["json", "csv"]),
-    default="json",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
     help="Format du rapport.",
 )
 @click.option(
