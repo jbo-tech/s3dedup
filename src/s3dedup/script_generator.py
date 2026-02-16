@@ -62,6 +62,7 @@ def generate_delete_script(
     bucket: str,
     keep: str = DEFAULT_KEEP,
     output: str = "delete_duplicates.sh",
+    endpoint_url: str | None = None,
 ) -> str:
     """Génère un script bash de suppression des doublons.
 
@@ -94,6 +95,10 @@ def generate_delete_script(
     lines.append('# DRY_RUN="--dryrun"')
     lines.append("")
     lines.append('set -euo pipefail')
+    if endpoint_url:
+        lines.append(f'ENDPOINT="--endpoint-url {endpoint_url}"')
+    else:
+        lines.append('ENDPOINT=""')
     lines.append("")
 
     if not groups:
@@ -115,7 +120,7 @@ def generate_delete_script(
         for obj in to_delete:
             key_escaped = obj.key.replace("'", "'\\''")
             lines.append(
-                f"aws s3 rm ${{DRY_RUN:-}}"
+                f"aws s3 rm ${{DRY_RUN:-}} $ENDPOINT"
                 f" 's3://{bucket}/{key_escaped}'"
             )
         lines.append("")

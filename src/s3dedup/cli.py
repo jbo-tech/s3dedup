@@ -139,7 +139,8 @@ def report(fmt, db_path):
     default="delete_duplicates.sh",
     help="Fichier de sortie.",
 )
-def generate_script(bucket, keep, db_path, output):
+@click.pass_context
+def generate_script(ctx, bucket, keep, db_path, output):
     """Générer un script de suppression des doublons."""
     try:
         conn = database.connect(db_path)
@@ -148,7 +149,10 @@ def generate_script(bucket, keep, db_path, output):
         sys.exit(1)
 
     try:
-        generate_delete_script(conn, bucket, keep=keep, output=output)
+        generate_delete_script(
+            conn, bucket, keep=keep, output=output,
+            endpoint_url=ctx.obj["endpoint_url"],
+        )
         stats = database.get_stats(conn)
         console.print(
             f"[green]Script généré :[/green] {output}\n"

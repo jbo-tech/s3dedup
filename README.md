@@ -32,12 +32,15 @@ uv run s3dedup scan --bucket my-bucket --prefix Music/
 # For S3-compatible services, add --endpoint-url
 uv run s3dedup --endpoint-url https://s3.example.com scan --bucket my-bucket
 
-# 2. View duplicate report
-uv run s3dedup report --format json    # or csv
+# 2. View duplicate report (table by default, or json/csv)
+uv run s3dedup report
+uv run s3dedup report --format json
+uv run s3dedup report --format csv
 
 # 3. Generate a reviewable deletion script
-uv run s3dedup generate-script --bucket my-bucket --keep oldest
-# Options: --keep oldest | newest | largest
+uv run s3dedup generate-script --bucket my-bucket
+# Default: --keep shortest,oldest (keeps shortest filename, then oldest on tie)
+# Other examples: --keep oldest  |  --keep newest  |  --keep shortest,newest
 ```
 
 The scan is incremental: run it on multiple prefixes, results accumulate in the same DuckDB index.
@@ -57,11 +60,24 @@ uv run s3dedup scan --bucket media --prefix Music/
 
 ## Output
 
-- `report` outputs to stdout (JSON or CSV) — pipe or redirect as needed
-- `generate-script` creates an executable bash script with `aws s3 rm` commands
+- `report` displays a formatted table by default (summary + duplicate groups sorted by wasted space). Use `--format json` or `--format csv` for machine-readable output.
+- `generate-script` creates an executable bash script with `aws s3 rm` commands:
   - Each deletion is commented with the duplicate group info
-  - Includes a dry-run option
+  - The `--endpoint-url` is automatically included if provided during generation
   - **Review the script before running it — deletions are irreversible**
+
+### Dry-run
+
+The generated script includes a dry-run option. To preview which files would be deleted without actually deleting them, uncomment the `DRY_RUN` line at the top of the script:
+
+```bash
+# In delete_duplicates.sh, change:
+# DRY_RUN="--dryrun"
+# to:
+DRY_RUN="--dryrun"
+```
+
+Then run the script — it will show what would be deleted without performing any deletion.
 
 ## Authentication
 
