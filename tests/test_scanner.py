@@ -73,6 +73,18 @@ class TestScanBucket:
         total = db.execute("SELECT count(*) FROM objects").fetchone()
         assert total[0] == 3
 
+    def test_skips_zero_byte_objects(self, s3_bucket, db):
+        """Les marqueurs de dossier S3 (0 octets) sont ignorés."""
+        s3_bucket.put_object(Bucket=BUCKET, Key="Music/", Body=b"")
+        s3_bucket.put_object(Bucket=BUCKET, Key="Music/rock/", Body=b"")
+        s3_bucket.put_object(Bucket=BUCKET, Key="Music/song.mp3", Body=b"x" * 100)
+
+        count = scan_bucket(BUCKET, db, s3_client=s3_bucket)
+        assert count == 1
+
+        rows = db.execute("SELECT key FROM objects").fetchall()
+        assert rows[0][0] == "Music/song.mp3"
+
     def test_empty_bucket(self, s3_bucket, db):
         count = scan_bucket(BUCKET, db, s3_client=s3_bucket)
         assert count == 0

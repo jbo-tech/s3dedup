@@ -58,6 +58,9 @@ def scan_bucket(
                 key = obj["Key"]
                 if key in existing_keys:
                     continue
+                # Ignorer les objets vides (marqueurs de dossier S3)
+                if obj["Size"] == 0:
+                    continue
 
                 etag = obj["ETag"]
                 info = ObjectInfo(
