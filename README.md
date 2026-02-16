@@ -48,6 +48,13 @@ uv run s3dedup scan --bucket media --prefix Movies/
 uv run s3dedup report  # includes duplicates across both prefixes
 ```
 
+To start fresh (e.g. after cleaning up duplicates), delete the index before rescanning:
+
+```bash
+rm s3dedup.duckdb
+uv run s3dedup scan --bucket media --prefix Music/
+```
+
 ## Output
 
 - `report` outputs to stdout (JSON or CSV) — pipe or redirect as needed
