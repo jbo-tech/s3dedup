@@ -72,6 +72,12 @@ def scan(ctx, bucket, prefix, db_path):
             f"{stats.duplicate_groups} groupes de doublons, "
             f"{stats.duplicate_objects} doublons."
         )
+        console.print(
+            "\n[dim]Étapes suivantes :[/dim]\n"
+            f"  s3dedup report --format json|csv --db {db_path}\n"
+            f"  s3dedup generate-script --bucket {bucket}"
+            f" --keep oldest|newest|largest --db {db_path}"
+        )
     except Exception as e:
         console.print(f"[red]Erreur scan :[/red] {e}")
         sys.exit(1)
