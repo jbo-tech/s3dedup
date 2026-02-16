@@ -4,14 +4,19 @@ Outil CLI Python pour dédupliquer des objets S3.
 
 ## Commands
 ```bash
-# À définir — projet en cours d'initialisation
-# Prévu : uv run, pytest, ruff
+uv run s3dedup scan --bucket BUCKET [--prefix PREFIX] [--db PATH]
+uv run s3dedup report --format json|csv [--db PATH]
+uv run s3dedup generate-script --bucket BUCKET [--keep oldest|newest|largest] [--db PATH] [--output PATH]
+uv run pytest              # tests
+uv run ruff check .        # lint
 ```
 
 ## Stack
 - Python 3.12+
 - boto3 (AWS S3)
-- CLI : click ou argparse
+- click (CLI)
+- DuckDB (index local)
+- rich (progression)
 - Build : pyproject.toml + uv
 
 ## Conventions
