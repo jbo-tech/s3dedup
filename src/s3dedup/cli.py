@@ -9,7 +9,7 @@ from rich.console import Console
 from s3dedup import db as database
 from s3dedup.hasher import hash_multipart_candidates
 from s3dedup.reporter import generate_report
-from s3dedup.scanner import scan_bucket
+from s3dedup.scanner import extract_all_media_metadata, scan_bucket
 from s3dedup.script_generator import generate_delete_script
 
 console = Console(stderr=True)
@@ -40,8 +40,12 @@ def cli(ctx, endpoint_url):
     default="s3dedup.duckdb",
     help="Chemin vers la base DuckDB.",
 )
+@click.option(
+    "--extract-metadata", is_flag=True, default=False,
+    help="Extraire les métadonnées des fichiers média (audio/vidéo).",
+)
 @click.pass_context
-def scan(ctx, bucket, prefix, db_path):
+def scan(ctx, bucket, prefix, db_path, extract_metadata):
     """Scanner un bucket S3 et indexer les objets."""
     try:
         conn = database.connect(db_path)
@@ -65,6 +69,17 @@ def scan(ctx, bucket, prefix, db_path):
             console.print(
                 f"[green]Hash passe 3 :[/green] {hashed} objets hashés."
             )
+
+        # Extraction métadonnées média (optionnel)
+        if extract_metadata:
+            enriched = extract_all_media_metadata(
+                bucket, conn, s3_client=s3_client,
+            )
+            if enriched:
+                console.print(
+                    f"[green]Métadonnées :[/green]"
+                    f" {enriched} fichiers média enrichis."
+                )
 
         stats = database.get_stats(conn)
         console.print(
@@ -127,7 +142,7 @@ def report(fmt, db_path):
 @click.option(
     "--keep",
     default="shortest,oldest",
-    help="Critères de rétention (shortest,oldest,newest).",
+    help="Critères de rétention (shortest,oldest,newest,cleanest).",
 )
 @click.option(
     "--db", "db_path",

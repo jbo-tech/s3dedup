@@ -22,6 +22,7 @@ class TestScanCommand:
         result = runner.invoke(cli, ["scan", "--help"])
         assert result.exit_code == 0
         assert "--bucket" in result.output
+        assert "--extract-metadata" in result.output
 
     def test_scan_bucket(self, runner, tmp_path):
         db_path = str(tmp_path / "test.duckdb")
@@ -71,7 +72,7 @@ class TestReportCommand:
             "report", "--format", "csv", "--db", db_path,
         ])
         assert result.exit_code == 0
-        assert "group_fingerprint" in result.output
+        assert "group_id" in result.output
 
 
 class TestGenerateScriptCommand:
@@ -79,6 +80,7 @@ class TestGenerateScriptCommand:
         result = runner.invoke(cli, ["generate-script", "--help"])
         assert result.exit_code == 0
         assert "--keep" in result.output
+        assert "cleanest" in result.output
 
     def test_generates_file(self, runner, tmp_path):
         db_path = str(tmp_path / "test.duckdb")

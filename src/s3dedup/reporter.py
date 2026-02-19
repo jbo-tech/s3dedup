@@ -2,6 +2,7 @@
 
 import csv
 import json
+from collections import defaultdict
 from io import StringIO
 
 import duckdb
@@ -9,7 +10,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from s3dedup.db import get_all_duplicates, get_stats
+from s3dedup.db import find_metadata_groups, get_all_duplicates, get_stats
+from s3dedup.normalizer import normalize_name
 from s3dedup.utils import human_size
 
 
@@ -20,15 +22,54 @@ def generate_report(
     """Génère un rapport de doublons au format demandé."""
     groups = get_all_duplicates(conn)
     stats = get_stats(conn)
+    suspect_groups = find_suspect_names(conn)
+    media_groups = find_metadata_groups(conn)
 
     if fmt == "json":
-        return _to_json(groups, stats)
+        return _to_json(groups, stats, suspect_groups, media_groups)
     if fmt == "csv":
-        return _to_csv(groups, stats)
-    return _to_table(groups, stats)
+        return _to_csv(groups, stats, suspect_groups, media_groups)
+    return _to_table(groups, stats, suspect_groups, media_groups)
 
 
-def _to_table(groups, stats) -> str:
+def find_suspect_names(
+    conn: duckdb.DuckDBPyConnection,
+) -> list[dict]:
+    """Trouve les fichiers aux noms normalisés identiques, contenus différents.
+
+    Retourne une liste de groupes :
+    [{"normalized": str, "files": [{"key": str, "size": int, "etag": str}]}]
+    """
+    rows = conn.execute(
+        "SELECT key, size, etag FROM objects ORDER BY key"
+    ).fetchall()
+
+    # Regrouper par nom normalisé
+    by_name: dict[str, list[dict]] = defaultdict(list)
+    for key, size, etag in rows:
+        normalized = normalize_name(key)
+        by_name[normalized].append({
+            "key": key, "size": size, "etag": etag,
+        })
+
+    # Garder uniquement les groupes avec des contenus différents
+    # (même nom normalisé mais au moins 2 etags distincts)
+    result = []
+    for normalized, files in sorted(by_name.items()):
+        if len(files) < 2:
+            continue
+        etags = {f["etag"] for f in files}
+        if len(etags) < 2:
+            continue
+        result.append({
+            "normalized": normalized,
+            "files": files,
+        })
+    return result
+
+
+def _to_table(groups, stats, suspect_groups=None,
+              media_groups=None) -> str:
     """Rapport formaté pour le terminal avec rich."""
     console = Console(file=StringIO(), force_terminal=True)
 
@@ -45,37 +86,94 @@ def _to_table(groups, stats) -> str:
 
     if not groups:
         console.print("[green]Aucun doublon détecté.[/green]")
-        return console.file.getvalue()
-
-    # Trier par espace gaspillé décroissant
-    sorted_groups = sorted(groups, key=lambda g: g.wasted_bytes, reverse=True)
-
-    # Tableau des groupes
-    table = Table(
-        title="Groupes de doublons",
-        show_lines=True,
-    )
-    table.add_column("#", style="dim", width=4)
-    table.add_column("Copies", justify="right")
-    table.add_column("Taille fichier", justify="right")
-    table.add_column("Espace perdu", justify="right", style="red")
-    table.add_column("Fichiers")
-
-    for i, g in enumerate(sorted_groups, 1):
-        files = "\n".join(o.key for o in g.objects)
-        table.add_row(
-            str(i),
-            str(len(g.objects)),
-            human_size(g.size),
-            human_size(g.wasted_bytes),
-            files,
+    else:
+        # Trier par espace gaspillé décroissant
+        sorted_groups = sorted(
+            groups, key=lambda g: g.wasted_bytes, reverse=True,
         )
 
-    console.print(table)
+        # Tableau des groupes
+        table = Table(
+            title="Groupes de doublons",
+            show_lines=True,
+        )
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Copies", justify="right")
+        table.add_column("Taille fichier", justify="right")
+        table.add_column("Espace perdu", justify="right", style="red")
+        table.add_column("Fichiers")
+
+        for i, g in enumerate(sorted_groups, 1):
+            files = "\n".join(o.key for o in g.objects)
+            table.add_row(
+                str(i),
+                str(len(g.objects)),
+                human_size(g.size),
+                human_size(g.wasted_bytes),
+                files,
+            )
+
+        console.print(table)
+
+    # Section noms suspects
+    if suspect_groups:
+        table = Table(
+            title="Noms suspects (même nom, contenu différent)",
+            show_lines=True,
+        )
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Nom normalisé")
+        table.add_column("Fichiers")
+        table.add_column("Tailles", justify="right")
+
+        for i, sg in enumerate(suspect_groups, 1):
+            files = "\n".join(f["key"] for f in sg["files"])
+            sizes = "\n".join(
+                human_size(f["size"]) for f in sg["files"]
+            )
+            table.add_row(
+                str(i), sg["normalized"], files, sizes,
+            )
+
+        console.print(table)
+
+    # Section même œuvre, encodage différent
+    if media_groups:
+        table = Table(
+            title="Même œuvre, encodage différent",
+            show_lines=True,
+        )
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Artiste")
+        table.add_column("Titre")
+        table.add_column("Fichiers")
+        table.add_column("Codec")
+        table.add_column("Taille", justify="right")
+
+        for i, mg in enumerate(media_groups, 1):
+            files = "\n".join(f["key"] for f in mg["files"])
+            codecs = "\n".join(
+                f["codec"] or "?" for f in mg["files"]
+            )
+            sizes = "\n".join(
+                human_size(f["size"]) for f in mg["files"]
+            )
+            table.add_row(
+                str(i),
+                mg["artist"],
+                mg["title"],
+                files,
+                codecs,
+                sizes,
+            )
+
+        console.print(table)
+
     return console.file.getvalue()
 
 
-def _to_json(groups, stats) -> str:
+def _to_json(groups, stats, suspect_groups=None,
+             media_groups=None) -> str:
     """Sérialise le rapport en JSON."""
     data = {
         "stats": {
@@ -101,27 +199,53 @@ def _to_json(groups, stats) -> str:
             for g in groups
         ],
     }
+    if suspect_groups:
+        data["suspect_names"] = suspect_groups
+    if media_groups:
+        data["same_work"] = media_groups
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
-def _to_csv(groups, stats) -> str:
+def _to_csv(groups, stats, suspect_groups=None,
+            media_groups=None) -> str:
     """Sérialise le rapport en CSV (une ligne par objet doublon)."""
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "group_fingerprint",
+        "section",
+        "group_id",
         "group_size",
-        "group_wasted_bytes",
         "object_key",
-        "last_modified",
+        "detail",
     ])
     for g in groups:
         for o in g.objects:
             writer.writerow([
+                "duplicate",
                 g.fingerprint,
                 g.size,
-                g.wasted_bytes,
                 o.key,
                 o.last_modified.isoformat(),
             ])
+    if suspect_groups:
+        for sg in suspect_groups:
+            for f in sg["files"]:
+                writer.writerow([
+                    "suspect_name",
+                    sg["normalized"],
+                    f["size"],
+                    f["key"],
+                    f["etag"],
+                ])
+    if media_groups:
+        for mg in media_groups:
+            group_id = f"{mg['artist']} - {mg['title']}"
+            for f in mg["files"]:
+                writer.writerow([
+                    "same_work",
+                    group_id,
+                    f["size"],
+                    f["key"],
+                    f["codec"] or "",
+                ])
     return output.getvalue()

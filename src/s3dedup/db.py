@@ -4,9 +4,9 @@ from datetime import datetime
 
 import duckdb
 
-from s3dedup.models import DuplicateGroup, ObjectInfo, ScanStats
+from s3dedup.models import DuplicateGroup, MediaMetadata, ObjectInfo, ScanStats
 
-SCHEMA = """\
+SCHEMA_OBJECTS = """\
 CREATE TABLE IF NOT EXISTS objects (
     key            VARCHAR NOT NULL PRIMARY KEY,
     size           BIGINT NOT NULL,
@@ -18,11 +18,24 @@ CREATE TABLE IF NOT EXISTS objects (
 );
 """
 
+SCHEMA_MEDIA = """\
+CREATE TABLE IF NOT EXISTS media_metadata (
+    key         VARCHAR NOT NULL PRIMARY KEY,
+    artist      VARCHAR,
+    album       VARCHAR,
+    title       VARCHAR,
+    duration_s  DOUBLE,
+    codec       VARCHAR,
+    bitrate     INTEGER
+);
+"""
+
 
 def connect(db_path: str = "s3dedup.duckdb") -> duckdb.DuckDBPyConnection:
     """Ouvre une connexion DuckDB et crée le schéma si nécessaire."""
     conn = duckdb.connect(db_path)
-    conn.execute(SCHEMA)
+    conn.execute(SCHEMA_OBJECTS)
+    conn.execute(SCHEMA_MEDIA)
     return conn
 
 
@@ -199,6 +212,75 @@ def get_stats(conn: duckdb.DuckDBPyConnection) -> ScanStats:
         duplicate_objects=dup_objects,
         wasted_bytes=wasted,
     )
+
+
+def upsert_media_metadata(
+    conn: duckdb.DuckDBPyConnection,
+    metadata_list: list[MediaMetadata],
+) -> int:
+    """Insère ou met à jour des métadonnées média. Retourne le nombre inséré."""
+    if not metadata_list:
+        return 0
+    rows = [
+        (m.key, m.artist, m.album, m.title, m.duration_s, m.codec, m.bitrate)
+        for m in metadata_list
+    ]
+    conn.executemany(
+        """
+        INSERT INTO media_metadata
+            (key, artist, album, title, duration_s, codec, bitrate)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (key) DO UPDATE SET
+            artist = excluded.artist,
+            album = excluded.album,
+            title = excluded.title,
+            duration_s = excluded.duration_s,
+            codec = excluded.codec,
+            bitrate = excluded.bitrate
+        """,
+        rows,
+    )
+    return len(rows)
+
+
+def find_metadata_groups(
+    conn: duckdb.DuckDBPyConnection,
+) -> list[dict]:
+    """Regroupe les fichiers par artiste+titre (même œuvre, encodages différents).
+
+    Retourne une liste de groupes, chaque groupe est un dict :
+    {"artist": str, "title": str, "files": [{"key", "codec", "bitrate", "size"}]}
+    """
+    rows = conn.execute(
+        """
+        SELECT m.artist, m.title, m.key, m.codec, m.bitrate, o.size
+        FROM media_metadata m
+        JOIN objects o ON m.key = o.key
+        WHERE m.artist IS NOT NULL AND m.title IS NOT NULL
+          AND (m.artist, m.title) IN (
+              SELECT artist, title FROM media_metadata
+              WHERE artist IS NOT NULL AND title IS NOT NULL
+              GROUP BY artist, title
+              HAVING count(*) > 1
+          )
+        ORDER BY m.artist, m.title, o.size DESC
+        """
+    ).fetchall()
+
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for artist, title, key, codec, bitrate, size in rows:
+        group_key = (artist, title)
+        groups.setdefault(group_key, []).append({
+            "key": key,
+            "codec": codec,
+            "bitrate": bitrate,
+            "size": size,
+        })
+
+    return [
+        {"artist": artist, "title": title, "files": files}
+        for (artist, title), files in groups.items()
+    ]
 
 
 def _group_rows(

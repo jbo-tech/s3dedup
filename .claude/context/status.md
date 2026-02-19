@@ -1,21 +1,41 @@
 # Status
 
 ## Objective
-Outil CLI Python pour détecter les objets dupliqués (byte-identique) dans un bucket S3. Cas d'usage : médiathèque ~9 To sur Mega.io (S3-compatible).
+Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie.
 
 ## Current focus
-MVP complet. Support endpoint S3-compatible ajouté. Prêt pour test réel sur Mega.io.
+Features T0→T4 implémentées et testées (150 tests). Prêt pour test sur données réelles et mise à jour du README.
 
 ## Log
 
+### 2026-02-19 (session 5)
+- Done:
+  - T0 : Schema `media_metadata` dans DuckDB, dataclass `MediaMetadata`, `MEDIA_EXTENSIONS`, fonctions `upsert_media_metadata()` et `find_metadata_groups()`
+  - T1 : Module `normalizer.py` (`normalize_name()`, `name_quality_score()`), rapport "noms suspects" dans les 3 formats, critère `--keep cleanest`
+  - T2 : Module `media.py` (extraction tags via range GET 256Ko + mutagen), `extract_all_media_metadata()` dans scanner, dépendance `mutagen>=1.47`
+  - T3 : Section "Même œuvre, encodage différent" dans les 3 formats de rapport (table, JSON, CSV)
+  - T4 : `scan --extract-metadata`, aide `--keep` mise à jour, test e2e complet
+  - Format CSV refactoré : colonnes `section, group_id, group_size, object_key, detail`
+  - 150 tests (+71), ruff clean
+- Next:
+  - Mettre à jour le README avec les nouvelles features
+  - Tester `--extract-metadata` sur le bucket réel
+  - Évaluer la couverture des métadonnées sur la médiathèque
+  - Mettre à jour scope.md (normalisation et métadonnées sont désormais in-scope)
+
+### 2026-02-16 (session 4)
+- Done:
+  - Fix : `--endpoint-url` propagé dans le script bash généré (les `aws s3 rm` utilisent maintenant `$ENDPOINT`)
+  - README mis à jour : documentation du dry-run, syntaxe --keep, formats de rapport
+- Note: `--endpoint-url` est une option globale (avant la commande, pas après)
+- Next: Scan complet du bucket media-center, dry-run du script, puis suppression
+
+### 2026-02-16 (session 3)
+- Done: Fix objets 0 octets, rapport table rich, politique multi-critères `--keep shortest,oldest`
+- 79 tests, ruff clean
+
 ### 2026-02-16 (session 2)
-- Done: Ajout --endpoint-url (option globale + envvar AWS_ENDPOINT_URL) pour les services S3-compatibles
-- Context: Le bucket cible est sur Mega.io, pas AWS — nécessite un endpoint custom
-- Next: Tester `uv run s3dedup --endpoint-url https://s3.eu-central-1.s4.mega.io scan --bucket media-center --prefix Music/`
+- Done: --endpoint-url, README, suggestions d'étapes suivantes
 
 ### 2026-02-16 (session 1)
-- Done: Implémentation complète du MVP (T1→T6)
-  - Project setup, interfaces DuckDB, scanner, hasher, reporter, script generator, CLI
-  - 65 tests passants, ruff clean
-- Bootstrap, explore, scope, decompose
-- Commits: `66c16f9` init, `0665417` feat: implement S3 deduplication CLI
+- Done: MVP complet (T1→T6), 65 tests

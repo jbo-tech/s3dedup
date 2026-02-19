@@ -168,6 +168,51 @@ class TestGenerateDeleteScript:
         assert "'\\''" in content
 
 
+class TestKeepCleanest:
+    def test_keeps_clean_name(self, tmp_path):
+        """cleanest garde le fichier avec le nom le plus propre."""
+        conn = connect(":memory:")
+        upsert_objects(conn, [
+            _obj("photo.jpg", size=100, etag="aaa"),
+            _obj("photo (1).jpg", size=100, etag="aaa"),
+        ])
+        output = str(tmp_path / "delete.sh")
+        content = generate_delete_script(
+            conn, "b", keep="cleanest", output=output,
+        )
+        assert "Conservé    : photo.jpg" in content
+
+    def test_keeps_clean_over_mojibake(self, tmp_path):
+        """cleanest préfère un nom sans encodage cassé."""
+        conn = connect(":memory:")
+        upsert_objects(conn, [
+            _obj("photo été.jpg", size=100, etag="aaa"),
+            _obj("photo Ã©tÃ©.jpg", size=100, etag="aaa"),
+        ])
+        output = str(tmp_path / "delete.sh")
+        content = generate_delete_script(
+            conn, "b", keep="cleanest", output=output,
+        )
+        assert "Conservé    : photo été.jpg" in content
+
+    def test_cleanest_with_other_criteria(self, tmp_path):
+        """cleanest,shortest : cleanest prime, shortest départage."""
+        conn = connect(":memory:")
+        upsert_objects(conn, [
+            _obj("dir/photo.jpg", size=100, etag="aaa"),
+            _obj("dir/ photo .jpg", size=100, etag="aaa"),
+        ])
+        output = str(tmp_path / "delete.sh")
+        content = generate_delete_script(
+            conn, "b", keep="cleanest,shortest", output=output,
+        )
+        assert "Conservé    : dir/photo.jpg" in content
+
+    def test_parse_keep_accepts_cleanest(self):
+        assert parse_keep("cleanest") == ["cleanest"]
+        assert parse_keep("cleanest,oldest") == ["cleanest", "oldest"]
+
+
 class TestHumanSize:
     def test_bytes(self):
         assert human_size(500) == "500.0 o"

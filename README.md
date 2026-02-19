@@ -1,16 +1,33 @@
 # s3dedup
 
-CLI tool to detect and report byte-identical duplicates in S3 buckets.
+CLI tool to detect and report duplicates in S3 buckets.
 
 Works with AWS S3 and S3-compatible services (Mega.io, MinIO, LocalStack, etc.).
 
+## Features
+
+- **Byte-identical deduplication** — 3-pass detection (size → ETag → SHA256), incremental scans
+- **Suspect name detection** — Find files with similar names but different content (encoding issues, copy suffixes, extra spaces)
+- **Media metadata grouping** — Extract audio/video tags to find same-work-different-encoding duplicates (e.g. FLAC vs MP3)
+- **Smart retention policy** — `--keep cleanest,shortest,oldest` to automatically prefer clean filenames
+
 ## How it works
 
-3-pass detection strategy, optimized to minimize S3 costs:
+### Byte-identical detection
+
+3-pass strategy, optimized to minimize S3 costs:
 
 1. **Size** — Group objects by size (free, from `ListObjectsV2`)
 2. **ETag** — Among same-size objects, group by ETag (free, already in listing)
 3. **SHA256** — For ambiguous multipart ETags, download and hash (targeted)
+
+### Suspect names
+
+Normalizes filenames (lowercase, strip accents, remove copy suffixes like `(1)`, `_copy`, `- Copie`, strip whitespace) and reports groups where the normalized name matches but the content differs.
+
+### Media metadata
+
+With `--extract-metadata`, downloads the first 256 KB of audio/video files to read tags (ID3, MP4, FLAC, OGG via mutagen). Groups files sharing the same artist + title but with different encodings.
 
 Results are stored in a local DuckDB index. Scans are incremental — only new objects are indexed.
 
@@ -18,7 +35,7 @@ Results are stored in a local DuckDB index. Scans are incremental — only new o
 
 ```bash
 # Requires Python 3.12+ and uv
-git clone https://github.com/YOUR_USER/s3dedup.git
+git clone https://github.com/jbo-tech/s3dedup.git
 cd s3dedup
 uv sync
 ```
@@ -29,18 +46,19 @@ uv sync
 # 1. Scan a bucket (or a prefix)
 uv run s3dedup scan --bucket my-bucket --prefix Music/
 
+# Scan with media metadata extraction (audio/video tags)
+uv run s3dedup scan --bucket my-bucket --extract-metadata
+
 # For S3-compatible services, add --endpoint-url
 uv run s3dedup --endpoint-url https://s3.example.com scan --bucket my-bucket
 
-# 2. View duplicate report (table by default, or json/csv)
+# 2. View report (table by default, or json/csv)
 uv run s3dedup report
 uv run s3dedup report --format json
 uv run s3dedup report --format csv
 
 # 3. Generate a reviewable deletion script
 uv run s3dedup generate-script --bucket my-bucket
-# Default: --keep shortest,oldest (keeps shortest filename, then oldest on tie)
-# Other examples: --keep oldest  |  --keep newest  |  --keep shortest,newest
 ```
 
 The scan is incremental: run it on multiple prefixes, results accumulate in the same DuckDB index.
@@ -58,13 +76,51 @@ rm s3dedup.duckdb
 uv run s3dedup scan --bucket media --prefix Music/
 ```
 
+## Retention policy (`--keep`)
+
+The `--keep` option controls which file to preserve when duplicates are found. Accepts a comma-separated list of criteria (first criterion has priority, next ones break ties):
+
+| Criterion | Keeps the file with... |
+|---|---|
+| `shortest` | the shortest filename |
+| `oldest` | the oldest `LastModified` date |
+| `newest` | the newest `LastModified` date |
+| `cleanest` | the cleanest filename (no mojibake, no copy suffix, no extra spaces) |
+
+Default: `--keep shortest,oldest`
+
+Examples:
+
+```bash
+uv run s3dedup generate-script --bucket my-bucket --keep cleanest,shortest
+uv run s3dedup generate-script --bucket my-bucket --keep oldest
+uv run s3dedup generate-script --bucket my-bucket --keep cleanest,newest
+```
+
+The `cleanest` criterion penalizes:
+- Mojibake encoding (`Ã©tÃ©` instead of `été`) — +10
+- Copy suffixes (`(1)`, `_copy`, `_1`, `- Copie`) — +5
+- Leading/trailing whitespace — +2
+- Multiple consecutive spaces — +1
+
 ## Output
 
-- `report` displays a formatted table by default (summary + duplicate groups sorted by wasted space). Use `--format json` or `--format csv` for machine-readable output.
-- `generate-script` creates an executable bash script with `aws s3 rm` commands:
-  - Each deletion is commented with the duplicate group info
-  - The `--endpoint-url` is automatically included if provided during generation
-  - **Review the script before running it — deletions are irreversible**
+### Report
+
+`report` displays three sections (each omitted if empty):
+
+1. **Duplicate groups** — Byte-identical files, sorted by wasted space
+2. **Suspect names** — Files with similar normalized names but different content
+3. **Same work, different encoding** — Media files sharing artist + title (requires `--extract-metadata` during scan)
+
+Use `--format json` or `--format csv` for machine-readable output. All three sections are included in every format.
+
+### Deletion script
+
+`generate-script` creates an executable bash script with `aws s3 rm` commands:
+- Each deletion is commented with the duplicate group info
+- The `--endpoint-url` is automatically included if provided during generation
+- **Review the script before running it — deletions are irreversible**
 
 ### Dry-run
 
@@ -88,6 +144,6 @@ For S3-compatible services, set `--endpoint-url` or the `AWS_ENDPOINT_URL` envir
 ## Development
 
 ```bash
-uv run pytest           # run tests
+uv run pytest           # run tests (150)
 uv run ruff check .     # lint
 ```

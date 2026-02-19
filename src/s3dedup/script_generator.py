@@ -7,6 +7,7 @@ import duckdb
 
 from s3dedup.db import get_all_duplicates, get_stats
 from s3dedup.models import DuplicateGroup, ObjectInfo
+from s3dedup.normalizer import name_quality_score
 from s3dedup.utils import human_size
 
 # Critères de rétention disponibles.
@@ -15,6 +16,7 @@ KEEP_CRITERIA = {
     "shortest": lambda o: len(posixpath.basename(o.key)),
     "oldest": lambda o: o.last_modified,
     "newest": lambda o: -o.last_modified.timestamp(),
+    "cleanest": lambda o: name_quality_score(o.key),
 }
 
 VALID_CRITERIA = set(KEEP_CRITERIA.keys())

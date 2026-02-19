@@ -7,6 +7,7 @@ dependencies = [
     "boto3>=1.35",
     "click>=8.1",
     "duckdb>=1.1",
+    "mutagen>=1.47",
     "rich>=13.0",
 ]
 

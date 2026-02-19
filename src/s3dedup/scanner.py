@@ -2,9 +2,16 @@
 
 import boto3
 import duckdb
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+)
 
-from s3dedup.db import upsert_objects
+from s3dedup.db import upsert_media_metadata, upsert_objects
+from s3dedup.media import extract_metadata, is_media_file
 from s3dedup.models import ObjectInfo
 
 # Taille du batch pour l'upsert en base
@@ -84,3 +91,61 @@ def scan_bucket(
             total_indexed += len(batch)
 
     return total_indexed
+
+
+def extract_all_media_metadata(
+    bucket: str,
+    conn: duckdb.DuckDBPyConnection,
+    s3_client=None,
+) -> int:
+    """Extrait les métadonnées des fichiers média non encore enrichis.
+
+    Retourne le nombre de fichiers traités.
+    """
+    if s3_client is None:
+        s3_client = boto3.client("s3")
+
+    # Fichiers média sans métadonnées existantes
+    rows = conn.execute(
+        """
+        SELECT o.key FROM objects o
+        LEFT JOIN media_metadata m ON o.key = m.key
+        WHERE m.key IS NULL
+        ORDER BY o.key
+        """
+    ).fetchall()
+    media_keys = [r[0] for r in rows if is_media_file(r[0])]
+
+    if not media_keys:
+        return 0
+
+    processed = 0
+    batch = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    ) as progress:
+        task = progress.add_task(
+            "Extraction métadonnées",
+            total=len(media_keys),
+        )
+
+        for key in media_keys:
+            meta = extract_metadata(s3_client, bucket, key)
+            if meta is not None:
+                batch.append(meta)
+
+            if len(batch) >= BATCH_SIZE:
+                upsert_media_metadata(conn, batch)
+                batch.clear()
+
+            processed += 1
+            progress.advance(task)
+
+        if batch:
+            upsert_media_metadata(conn, batch)
+
+    return processed

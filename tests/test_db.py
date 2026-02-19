@@ -6,14 +6,16 @@ from s3dedup.db import (
     connect,
     find_etag_duplicates,
     find_hash_duplicates,
+    find_metadata_groups,
     find_multipart_candidates,
     find_size_duplicates,
     get_all_duplicates,
     get_stats,
     update_sha256,
+    upsert_media_metadata,
     upsert_objects,
 )
-from s3dedup.models import ObjectInfo
+from s3dedup.models import MediaMetadata, ObjectInfo
 
 NOW = datetime(2026, 1, 15, 12, 0, 0)
 
@@ -36,12 +38,14 @@ def _mem_db():
 
 
 class TestConnect:
-    def test_creates_table(self):
+    def test_creates_tables(self):
         conn = _mem_db()
         tables = conn.execute(
             "SELECT table_name FROM information_schema.tables"
         ).fetchall()
-        assert ("objects",) in tables
+        table_names = {t[0] for t in tables}
+        assert "objects" in table_names
+        assert "media_metadata" in table_names
 
     def test_idempotent(self):
         """Appeler connect deux fois ne plante pas."""
@@ -213,3 +217,124 @@ class TestGetStats:
         stats = get_stats(conn)
         assert stats.total_objects == 0
         assert stats.wasted_bytes == 0
+
+
+def _make_media(key, artist=None, album=None, title=None,
+                duration_s=None, codec=None, bitrate=None):
+    """Crée un MediaMetadata pour les tests."""
+    return MediaMetadata(
+        key=key, artist=artist, album=album,
+        title=title, duration_s=duration_s,
+        codec=codec, bitrate=bitrate,
+    )
+
+
+class TestUpsertMediaMetadata:
+    def test_insert(self):
+        conn = _mem_db()
+        upsert_objects(conn, [_make_obj("song.mp3")])
+        count = upsert_media_metadata(conn, [
+            _make_media("song.mp3", artist="Artist", title="Title"),
+        ])
+        assert count == 1
+        row = conn.execute(
+            "SELECT artist, title FROM media_metadata WHERE key = 'song.mp3'"
+        ).fetchone()
+        assert row == ("Artist", "Title")
+
+    def test_upsert_updates(self):
+        conn = _mem_db()
+        upsert_objects(conn, [_make_obj("song.mp3")])
+        upsert_media_metadata(conn, [
+            _make_media("song.mp3", artist="Old"),
+        ])
+        upsert_media_metadata(conn, [
+            _make_media("song.mp3", artist="New"),
+        ])
+        row = conn.execute(
+            "SELECT artist FROM media_metadata WHERE key = 'song.mp3'"
+        ).fetchone()
+        assert row[0] == "New"
+
+    def test_empty_list(self):
+        conn = _mem_db()
+        assert upsert_media_metadata(conn, []) == 0
+
+    def test_partial_metadata(self):
+        """Les champs optionnels peuvent être None."""
+        conn = _mem_db()
+        upsert_objects(conn, [_make_obj("song.mp3")])
+        upsert_media_metadata(conn, [
+            _make_media("song.mp3", artist="Artist"),
+        ])
+        row = conn.execute(
+            "SELECT title, album, codec FROM media_metadata"
+            " WHERE key = 'song.mp3'"
+        ).fetchone()
+        assert row == (None, None, None)
+
+
+class TestFindMetadataGroups:
+    def test_groups_same_work(self):
+        """Deux fichiers même artiste+titre → regroupés."""
+        conn = _mem_db()
+        upsert_objects(conn, [
+            _make_obj("song.flac", size=50_000_000),
+            _make_obj("song.mp3", size=5_000_000),
+        ])
+        upsert_media_metadata(conn, [
+            _make_media("song.flac", artist="Artist", title="Song",
+                        codec="flac", bitrate=1411),
+            _make_media("song.mp3", artist="Artist", title="Song",
+                        codec="mp3", bitrate=320),
+        ])
+        groups = find_metadata_groups(conn)
+        assert len(groups) == 1
+        assert groups[0]["artist"] == "Artist"
+        assert groups[0]["title"] == "Song"
+        assert len(groups[0]["files"]) == 2
+
+    def test_different_works_not_grouped(self):
+        """Deux fichiers artiste+titre différents → pas de groupe."""
+        conn = _mem_db()
+        upsert_objects(conn, [
+            _make_obj("a.mp3", size=100),
+            _make_obj("b.mp3", size=200),
+        ])
+        upsert_media_metadata(conn, [
+            _make_media("a.mp3", artist="Artist", title="Song A"),
+            _make_media("b.mp3", artist="Artist", title="Song B"),
+        ])
+        assert find_metadata_groups(conn) == []
+
+    def test_ignores_null_artist_or_title(self):
+        """Les fichiers sans artiste ou titre ne sont pas regroupés."""
+        conn = _mem_db()
+        upsert_objects(conn, [
+            _make_obj("a.mp3", size=100),
+            _make_obj("b.mp3", size=200),
+        ])
+        upsert_media_metadata(conn, [
+            _make_media("a.mp3", artist=None, title="Song"),
+            _make_media("b.mp3", artist=None, title="Song"),
+        ])
+        assert find_metadata_groups(conn) == []
+
+    def test_empty_table(self):
+        conn = _mem_db()
+        assert find_metadata_groups(conn) == []
+
+    def test_files_ordered_by_size_desc(self):
+        """Les fichiers d'un groupe sont triés par taille décroissante."""
+        conn = _mem_db()
+        upsert_objects(conn, [
+            _make_obj("small.mp3", size=1000),
+            _make_obj("large.flac", size=50000),
+        ])
+        upsert_media_metadata(conn, [
+            _make_media("small.mp3", artist="A", title="T", codec="mp3"),
+            _make_media("large.flac", artist="A", title="T", codec="flac"),
+        ])
+        groups = find_metadata_groups(conn)
+        assert groups[0]["files"][0]["key"] == "large.flac"
+        assert groups[0]["files"][1]["key"] == "small.mp3"
