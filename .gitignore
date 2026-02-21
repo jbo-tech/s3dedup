@@ -13,6 +13,7 @@ build/
 # Environment
 .env
 .env.*
+delete_duplicates.sh
 
 # IDE
 .vscode/

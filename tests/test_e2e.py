@@ -58,7 +58,7 @@ class TestEndToEnd:
             "scan", "--bucket", BUCKET, "--db", db_path,
         ])
         assert result.exit_code == 0, result.output
-        assert "7 objets indexés" in result.output
+        assert "7 nouveaux" in result.output
         assert "groupes de doublons" in result.output
 
         # 2. Report JSON
@@ -97,6 +97,39 @@ class TestEndToEnd:
         assert f"s3://{BUCKET}/" in script
         assert "set -euo pipefail" in script
 
+    def test_endpoint_url_persisted(self, runner, s3_with_duplicates, tmp_path):
+        """Scan persiste l'endpoint → generate-script le réutilise."""
+        db_path = str(tmp_path / "endpoint.duckdb")
+        script_path = str(tmp_path / "delete.sh")
+        endpoint = "https://s3.custom.example.com"
+
+        # 1. Scan normal (moto ne supporte pas les endpoints custom)
+        result = runner.invoke(cli, [
+            "scan", "--bucket", BUCKET, "--db", db_path,
+        ])
+        assert result.exit_code == 0, result.output
+
+        # 2. Simuler un scan avec endpoint : écrire directement en DB
+        from s3dedup import db as database
+        conn = database.connect(db_path)
+        database.set_bucket_config(conn, BUCKET, endpoint)
+        conn.close()
+
+        # 3. Generate script SANS --endpoint-url → fallback sur la DB
+        result = runner.invoke(cli, [
+            "generate-script",
+            "--bucket", BUCKET,
+            "--keep", "oldest",
+            "--db", db_path,
+            "--output", script_path,
+        ])
+        assert result.exit_code == 0, result.output
+        assert "Endpoint depuis le scan" in result.output
+
+        with open(script_path) as f:
+            script = f.read()
+        assert endpoint in script
+
     def test_scan_with_prefix(self, runner, s3_with_duplicates, tmp_path):
         """Scan filtré par préfixe."""
         db_path = str(tmp_path / "prefix.duckdb")
@@ -108,7 +141,7 @@ class TestEndToEnd:
         ])
         assert result.exit_code == 0
         # 4 fichiers sous music/ (3 chansons + 1 unique)
-        assert "4 objets indexés" in result.output
+        assert "4 nouveaux" in result.output
 
     def test_rescan_is_incremental(
         self, runner, s3_with_duplicates, tmp_path,
@@ -124,7 +157,7 @@ class TestEndToEnd:
         result = runner.invoke(cli, [
             "scan", "--bucket", BUCKET, "--db", db_path,
         ])
-        assert "0 objets indexés" in result.output
+        assert "aucun changement" in result.output
 
     def test_extract_metadata_workflow(
         self, runner, tmp_path,

@@ -10,9 +10,14 @@ from rich.progress import (
     TextColumn,
 )
 
-from s3dedup.db import upsert_media_metadata, upsert_objects
+from s3dedup.db import (
+    delete_objects,
+    get_keys_with_prefix,
+    upsert_media_metadata,
+    upsert_objects,
+)
 from s3dedup.media import extract_metadata, is_media_file
-from s3dedup.models import ObjectInfo
+from s3dedup.models import ObjectInfo, ScanResult
 
 # Taille du batch pour l'upsert en base
 BATCH_SIZE = 1000
@@ -24,27 +29,24 @@ def is_multipart_etag(etag: str) -> bool:
     return "-" in clean and clean.rsplit("-", 1)[-1].isdigit()
 
 
-def _get_existing_keys(conn: duckdb.DuckDBPyConnection) -> set[str]:
-    """Récupère les clés déjà indexées pour la reprise."""
-    rows = conn.execute("SELECT key FROM objects").fetchall()
-    return {r[0] for r in rows}
-
-
 def scan_bucket(
     bucket: str,
     conn: duckdb.DuckDBPyConnection,
     prefix: str = "",
     s3_client=None,
-) -> int:
+) -> ScanResult:
     """Scanne un bucket S3 et indexe les objets dans DuckDB.
 
-    Retourne le nombre d'objets indexés.
+    Détecte les nouveaux objets, les modifications (ETag changé)
+    et les suppressions (clés absentes du listing S3).
     """
     if s3_client is None:
         s3_client = boto3.client("s3")
 
-    existing_keys = _get_existing_keys(conn)
-    total_indexed = 0
+    existing_etags = get_keys_with_prefix(conn, prefix)
+    new_count = 0
+    updated_count = 0
+    seen_keys: set[str] = set()
     batch: list[ObjectInfo] = []
 
     paginator = s3_client.get_paginator("list_objects_v2")
@@ -53,23 +55,33 @@ def scan_bucket(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        TextColumn("{task.fields[indexed]} objets indexés"),
+        TextColumn("{task.fields[status]}"),
     ) as progress:
         task = progress.add_task(
             f"Scan s3://{bucket}/{prefix}",
-            indexed=0,
+            status="0 nouveaux, 0 modifiés",
         )
 
         for page in pages:
             for obj in page.get("Contents", []):
                 key = obj["Key"]
-                if key in existing_keys:
-                    continue
                 # Ignorer les objets vides (marqueurs de dossier S3)
                 if obj["Size"] == 0:
                     continue
 
+                seen_keys.add(key)
                 etag = obj["ETag"]
+
+                # Skip si déjà en base avec le même ETag
+                if key in existing_etags and existing_etags[key] == etag:
+                    continue
+
+                is_update = key in existing_etags
+                if is_update:
+                    updated_count += 1
+                else:
+                    new_count += 1
+
                 info = ObjectInfo(
                     key=key,
                     size=obj["Size"],
@@ -81,16 +93,26 @@ def scan_bucket(
 
                 if len(batch) >= BATCH_SIZE:
                     upsert_objects(conn, batch)
-                    total_indexed += len(batch)
-                    progress.update(task, indexed=total_indexed)
+                    progress.update(
+                        task,
+                        status=f"{new_count} nouveaux, {updated_count} modifiés",
+                    )
                     batch.clear()
 
         # Dernier batch
         if batch:
             upsert_objects(conn, batch)
-            total_indexed += len(batch)
 
-    return total_indexed
+    # Détecter les suppressions : clés en base absentes du listing S3
+    deleted_keys = [k for k in existing_etags if k not in seen_keys]
+    if deleted_keys:
+        delete_objects(conn, deleted_keys)
+
+    return ScanResult(
+        new=new_count,
+        updated=updated_count,
+        deleted=len(deleted_keys),
+    )
 
 
 def extract_all_media_metadata(

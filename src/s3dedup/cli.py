@@ -17,17 +17,8 @@ console = Console(stderr=True)
 
 @click.group()
 @click.version_option(version="0.1.0")
-@click.option(
-    "--endpoint-url",
-    envvar="AWS_ENDPOINT_URL",
-    default=None,
-    help="URL du endpoint S3 (pour les services S3-compatibles).",
-)
-@click.pass_context
-def cli(ctx, endpoint_url):
+def cli():
     """Détection de doublons dans un bucket S3."""
-    ctx.ensure_object(dict)
-    ctx.obj["endpoint_url"] = endpoint_url
 
 
 @cli.command()
@@ -44,8 +35,13 @@ def cli(ctx, endpoint_url):
     "--extract-metadata", is_flag=True, default=False,
     help="Extraire les métadonnées des fichiers média (audio/vidéo).",
 )
-@click.pass_context
-def scan(ctx, bucket, prefix, db_path, extract_metadata):
+@click.option(
+    "--endpoint-url",
+    envvar="AWS_ENDPOINT_URL",
+    default=None,
+    help="URL du endpoint S3 (pour les services S3-compatibles).",
+)
+def scan(bucket, prefix, db_path, extract_metadata, endpoint_url):
     """Scanner un bucket S3 et indexer les objets."""
     try:
         conn = database.connect(db_path)
@@ -53,13 +49,30 @@ def scan(ctx, bucket, prefix, db_path, extract_metadata):
         console.print(f"[red]Erreur DB :[/red] {e}")
         sys.exit(1)
 
-    s3_client = _make_s3_client(ctx.obj["endpoint_url"])
+    s3_client = _make_s3_client(endpoint_url)
 
     try:
-        count = scan_bucket(bucket, conn, prefix=prefix, s3_client=s3_client)
-        console.print(
-            f"[green]Scan terminé :[/green] {count} objets indexés."
+        result = scan_bucket(bucket, conn, prefix=prefix, s3_client=s3_client)
+
+        # Persister l'endpoint pour ce bucket
+        old_endpoint = database.set_bucket_config(
+            conn, bucket, endpoint_url,
         )
+        if old_endpoint:
+            console.print(
+                f"[yellow]Attention :[/yellow] endpoint changé"
+                f" ({old_endpoint} → {endpoint_url})"
+            )
+
+        parts = []
+        if result.new:
+            parts.append(f"{result.new} nouveaux")
+        if result.updated:
+            parts.append(f"{result.updated} modifiés")
+        if result.deleted:
+            parts.append(f"{result.deleted} supprimés")
+        summary = ", ".join(parts) if parts else "aucun changement"
+        console.print(f"[green]Scan terminé :[/green] {summary}.")
 
         # Passe 3 : hash des candidats multipart
         hashed = hash_multipart_candidates(
@@ -91,7 +104,7 @@ def scan(ctx, bucket, prefix, db_path, extract_metadata):
             "\n[dim]Étapes suivantes :[/dim]\n"
             f"  s3dedup report [--format table|json|csv] --db {db_path}\n"
             f"  s3dedup generate-script --bucket {bucket}"
-            f" --keep shortest,oldest --db {db_path}"
+            f" --keep cleanest,shortest,oldest --db {db_path}"
         )
     except Exception as e:
         console.print(f"[red]Erreur scan :[/red] {e}")
@@ -131,6 +144,15 @@ def report(fmt, db_path):
     try:
         output = generate_report(conn, fmt=fmt)
         click.echo(output)
+
+        if fmt == "table":
+            stats = database.get_stats(conn)
+            if stats.duplicate_groups:
+                console.print(
+                    "\n[dim]Étape suivante :[/dim]\n"
+                    f"  s3dedup generate-script --bucket BUCKET"
+                    f" --keep cleanest,shortest,oldest --db {db_path}"
+                )
     finally:
         conn.close()
 
@@ -141,8 +163,8 @@ def report(fmt, db_path):
 )
 @click.option(
     "--keep",
-    default="shortest,oldest",
-    help="Critères de rétention (shortest,oldest,newest,cleanest).",
+    default="cleanest,shortest,oldest",
+    help="Critères de rétention (cleanest,shortest,oldest,newest).",
 )
 @click.option(
     "--db", "db_path",
@@ -154,8 +176,13 @@ def report(fmt, db_path):
     default="delete_duplicates.sh",
     help="Fichier de sortie.",
 )
-@click.pass_context
-def generate_script(ctx, bucket, keep, db_path, output):
+@click.option(
+    "--endpoint-url",
+    envvar="AWS_ENDPOINT_URL",
+    default=None,
+    help="URL du endpoint S3 (pour les services S3-compatibles).",
+)
+def generate_script(bucket, keep, db_path, output, endpoint_url):
     """Générer un script de suppression des doublons."""
     try:
         conn = database.connect(db_path)
@@ -164,14 +191,28 @@ def generate_script(ctx, bucket, keep, db_path, output):
         sys.exit(1)
 
     try:
+        # Fallback sur l'endpoint stocké lors du scan
+        if not endpoint_url:
+            stored = database.get_bucket_config(conn, bucket)
+            if stored:
+                endpoint_url = stored
+                console.print(
+                    f"[dim]Endpoint depuis le scan :[/dim] {endpoint_url}"
+                )
+
         generate_delete_script(
             conn, bucket, keep=keep, output=output,
-            endpoint_url=ctx.obj["endpoint_url"],
+            endpoint_url=endpoint_url,
         )
         stats = database.get_stats(conn)
         console.print(
             f"[green]Script généré :[/green] {output}\n"
-            f"{stats.duplicate_objects} objets à supprimer."
+            f"{stats.duplicate_objects} objets à supprimer.\n"
+        )
+        console.print(
+            "[dim]Vérifier puis lancer :[/dim]\n"
+            f"  cat {output}        # relire le script\n"
+            f"  bash {output}       # exécuter les suppressions"
         )
     except Exception as e:
         console.print(f"[red]Erreur :[/red] {e}")

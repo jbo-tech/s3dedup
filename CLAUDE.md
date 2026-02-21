@@ -4,9 +4,9 @@ Outil CLI Python pour dédupliquer des objets S3.
 
 ## Commands
 ```bash
-uv run s3dedup scan --bucket BUCKET [--prefix PREFIX] [--db PATH]
-uv run s3dedup report --format json|csv [--db PATH]
-uv run s3dedup generate-script --bucket BUCKET [--keep oldest|newest|largest] [--db PATH] [--output PATH]
+uv run s3dedup scan --bucket BUCKET [--prefix PREFIX] [--endpoint-url URL] [--extract-metadata] [--db PATH]
+uv run s3dedup report [--format table|json|csv] [--db PATH]
+uv run s3dedup generate-script --bucket BUCKET [--keep shortest,oldest|cleanest,...] [--endpoint-url URL] [--db PATH] [--output PATH]
 uv run pytest              # tests
 uv run ruff check .        # lint
 ```
@@ -17,6 +17,7 @@ uv run ruff check .        # lint
 - click (CLI)
 - DuckDB (index local)
 - rich (progression)
+- mutagen (métadonnées média)
 - Build : pyproject.toml + uv
 
 ## Conventions

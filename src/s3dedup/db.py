@@ -30,12 +30,21 @@ CREATE TABLE IF NOT EXISTS media_metadata (
 );
 """
 
+SCHEMA_BUCKET_CONFIG = """\
+CREATE TABLE IF NOT EXISTS bucket_config (
+    bucket       VARCHAR NOT NULL PRIMARY KEY,
+    endpoint_url VARCHAR,
+    updated_at   TIMESTAMP NOT NULL DEFAULT now()
+);
+"""
+
 
 def connect(db_path: str = "s3dedup.duckdb") -> duckdb.DuckDBPyConnection:
     """Ouvre une connexion DuckDB et crée le schéma si nécessaire."""
     conn = duckdb.connect(db_path)
     conn.execute(SCHEMA_OBJECTS)
     conn.execute(SCHEMA_MEDIA)
+    conn.execute(SCHEMA_BUCKET_CONFIG)
     return conn
 
 
@@ -65,6 +74,35 @@ def upsert_objects(
         rows,
     )
     return len(rows)
+
+
+def get_keys_with_prefix(
+    conn: duckdb.DuckDBPyConnection,
+    prefix: str,
+) -> dict[str, str]:
+    """Retourne les clés et ETags des objets dont la clé commence par prefix."""
+    rows = conn.execute(
+        "SELECT key, etag FROM objects WHERE key LIKE ?",
+        [prefix + "%"],
+    ).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def delete_objects(
+    conn: duckdb.DuckDBPyConnection,
+    keys: list[str],
+) -> None:
+    """Supprime des objets et leurs métadonnées média associées."""
+    if not keys:
+        return
+    conn.executemany(
+        "DELETE FROM media_metadata WHERE key = ?",
+        [(k,) for k in keys],
+    )
+    conn.executemany(
+        "DELETE FROM objects WHERE key = ?",
+        [(k,) for k in keys],
+    )
 
 
 def find_size_duplicates(
@@ -281,6 +319,46 @@ def find_metadata_groups(
         {"artist": artist, "title": title, "files": files}
         for (artist, title), files in groups.items()
     ]
+
+
+def set_bucket_config(
+    conn: duckdb.DuckDBPyConnection,
+    bucket: str,
+    endpoint_url: str | None,
+) -> str | None:
+    """Enregistre l'endpoint d'un bucket. Retourne l'ancien endpoint si changé."""
+    row = conn.execute(
+        "SELECT endpoint_url FROM bucket_config WHERE bucket = ?",
+        [bucket],
+    ).fetchone()
+    previous = row[0] if row else None
+
+    conn.execute(
+        """
+        INSERT INTO bucket_config (bucket, endpoint_url)
+        VALUES (?, ?)
+        ON CONFLICT (bucket) DO UPDATE SET
+            endpoint_url = excluded.endpoint_url,
+            updated_at = now()
+        """,
+        [bucket, endpoint_url],
+    )
+
+    if previous is not None and previous != endpoint_url:
+        return previous
+    return None
+
+
+def get_bucket_config(
+    conn: duckdb.DuckDBPyConnection,
+    bucket: str,
+) -> str | None:
+    """Retourne l'endpoint URL stocké pour un bucket, ou None."""
+    row = conn.execute(
+        "SELECT endpoint_url FROM bucket_config WHERE bucket = ?",
+        [bucket],
+    ).fetchone()
+    return row[0] if row else None
 
 
 def _group_rows(

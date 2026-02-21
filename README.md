@@ -50,7 +50,7 @@ uv run s3dedup scan --bucket my-bucket --prefix Music/
 uv run s3dedup scan --bucket my-bucket --extract-metadata
 
 # For S3-compatible services, add --endpoint-url
-uv run s3dedup --endpoint-url https://s3.example.com scan --bucket my-bucket
+uv run s3dedup scan --bucket my-bucket --endpoint-url https://s3.example.com
 
 # 2. View report (table by default, or json/csv)
 uv run s3dedup report
@@ -69,11 +69,20 @@ uv run s3dedup scan --bucket media --prefix Movies/
 uv run s3dedup report  # includes duplicates across both prefixes
 ```
 
-To start fresh (e.g. after cleaning up duplicates), delete the index before rescanning:
+### Reset
+
+To start fresh (e.g. after cleaning up duplicates), delete the DuckDB index and rescan:
 
 ```bash
 rm s3dedup.duckdb
 uv run s3dedup scan --bucket media --prefix Music/
+```
+
+To use a different database path, pass `--db` to any command:
+
+```bash
+uv run s3dedup scan --bucket media --db /tmp/media.duckdb
+uv run s3dedup report --db /tmp/media.duckdb
 ```
 
 ## Retention policy (`--keep`)
@@ -87,14 +96,14 @@ The `--keep` option controls which file to preserve when duplicates are found. A
 | `newest` | the newest `LastModified` date |
 | `cleanest` | the cleanest filename (no mojibake, no copy suffix, no extra spaces) |
 
-Default: `--keep shortest,oldest`
+Default: `--keep cleanest,shortest,oldest`
 
 Examples:
 
 ```bash
-uv run s3dedup generate-script --bucket my-bucket --keep cleanest,shortest
-uv run s3dedup generate-script --bucket my-bucket --keep oldest
-uv run s3dedup generate-script --bucket my-bucket --keep cleanest,newest
+uv run s3dedup generate-script --bucket my-bucket                              # défaut: cleanest,shortest,oldest
+uv run s3dedup generate-script --bucket my-bucket --keep shortest,oldest       # ignorer la propreté du nom
+uv run s3dedup generate-script --bucket my-bucket --keep cleanest,newest       # préférer les plus récents
 ```
 
 The `cleanest` criterion penalizes:
@@ -119,21 +128,16 @@ Use `--format json` or `--format csv` for machine-readable output. All three sec
 
 `generate-script` creates an executable bash script with `aws s3 rm` commands:
 - Each deletion is commented with the duplicate group info
-- The `--endpoint-url` is automatically included if provided during generation
+- The `--endpoint-url` is automatically retrieved from the database (saved during scan) if not provided
 - **Review the script before running it — deletions are irreversible**
 
 ### Dry-run
 
-The generated script includes a dry-run option. To preview which files would be deleted without actually deleting them, uncomment the `DRY_RUN` line at the top of the script:
+To preview which files would be deleted without actually deleting them:
 
 ```bash
-# In delete_duplicates.sh, change:
-# DRY_RUN="--dryrun"
-# to:
-DRY_RUN="--dryrun"
+bash delete_duplicates.sh --dryrun
 ```
-
-Then run the script — it will show what would be deleted without performing any deletion.
 
 ## Authentication
 
@@ -141,9 +145,23 @@ Uses the standard boto3 credential chain (environment variables, `~/.aws/credent
 
 For S3-compatible services, set `--endpoint-url` or the `AWS_ENDPOINT_URL` environment variable.
 
+The endpoint URL is saved in the database during `scan`. Subsequent commands (`generate-script`) will reuse it automatically — no need to pass `--endpoint-url` again.
+
 ## Development
 
 ```bash
 uv run pytest           # run tests (150)
 uv run ruff check .     # lint
 ```
+
+## Database
+
+s3dedup uses a local DuckDB file (`s3dedup.duckdb` by default) to store:
+
+| Table | Content |
+|---|---|
+| `objects` | S3 object index (key, size, ETag, SHA256, last_modified) |
+| `media_metadata` | Audio/video tags (artist, album, title, codec, bitrate) |
+| `bucket_config` | Per-bucket settings (endpoint URL) |
+
+To reset everything, simply delete the file: `rm s3dedup.duckdb`

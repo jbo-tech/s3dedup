@@ -37,7 +37,7 @@ class TestScanCommand:
             ])
 
         assert result.exit_code == 0
-        assert "2 objets indexés" in result.output
+        assert "2 nouveaux" in result.output
 
 
 class TestReportCommand:

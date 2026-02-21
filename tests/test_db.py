@@ -10,7 +10,9 @@ from s3dedup.db import (
     find_multipart_candidates,
     find_size_duplicates,
     get_all_duplicates,
+    get_bucket_config,
     get_stats,
+    set_bucket_config,
     update_sha256,
     upsert_media_metadata,
     upsert_objects,
@@ -338,3 +340,46 @@ class TestFindMetadataGroups:
         groups = find_metadata_groups(conn)
         assert groups[0]["files"][0]["key"] == "large.flac"
         assert groups[0]["files"][1]["key"] == "small.mp3"
+
+
+class TestBucketConfig:
+    def test_set_and_get(self):
+        """Stocker puis récupérer un endpoint."""
+        conn = _mem_db()
+        result = set_bucket_config(conn, "my-bucket", "https://s3.example.com")
+        assert result is None  # pas d'ancien endpoint
+        assert get_bucket_config(conn, "my-bucket") == "https://s3.example.com"
+
+    def test_get_unknown_bucket(self):
+        """Bucket inconnu retourne None."""
+        conn = _mem_db()
+        assert get_bucket_config(conn, "unknown") is None
+
+    def test_update_returns_old_endpoint(self):
+        """Changer l'endpoint retourne l'ancienne valeur."""
+        conn = _mem_db()
+        set_bucket_config(conn, "b", "https://old.example.com")
+        old = set_bucket_config(conn, "b", "https://new.example.com")
+        assert old == "https://old.example.com"
+        assert get_bucket_config(conn, "b") == "https://new.example.com"
+
+    def test_same_endpoint_returns_none(self):
+        """Même endpoint → pas de changement signalé."""
+        conn = _mem_db()
+        set_bucket_config(conn, "b", "https://s3.example.com")
+        old = set_bucket_config(conn, "b", "https://s3.example.com")
+        assert old is None
+
+    def test_set_none_endpoint(self):
+        """Stocker None (AWS standard) fonctionne."""
+        conn = _mem_db()
+        set_bucket_config(conn, "b", None)
+        assert get_bucket_config(conn, "b") is None
+
+    def test_table_created_on_connect(self):
+        """La table bucket_config existe après connect."""
+        conn = _mem_db()
+        tables = conn.execute(
+            "SELECT table_name FROM information_schema.tables"
+        ).fetchall()
+        assert "bucket_config" in {t[0] for t in tables}

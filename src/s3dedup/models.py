@@ -53,6 +53,15 @@ class MediaMetadata:
 
 
 @dataclass
+class ScanResult:
+    """Résultat d'un scan incrémental."""
+
+    new: int
+    updated: int
+    deleted: int
+
+
+@dataclass
 class ScanStats:
     """Statistiques d'un scan."""
 

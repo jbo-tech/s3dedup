@@ -20,7 +20,7 @@ KEEP_CRITERIA = {
 }
 
 VALID_CRITERIA = set(KEEP_CRITERIA.keys())
-DEFAULT_KEEP = "shortest,oldest"
+DEFAULT_KEEP = "cleanest,shortest,oldest"
 
 
 def parse_keep(keep: str) -> list[str]:
@@ -93,10 +93,15 @@ def generate_delete_script(
     lines.append("# ATTENTION : Vérifiez ce script avant exécution !")
     lines.append("# Les suppressions S3 sont IRRÉVERSIBLES.")
     lines.append("#")
-    lines.append("# Pour un dry-run, décommentez la ligne suivante :")
-    lines.append('# DRY_RUN="--dryrun"')
     lines.append("")
     lines.append('set -euo pipefail')
+    lines.append("")
+    lines.append("# Dry-run : bash delete_duplicates.sh --dryrun")
+    lines.append('DRY_RUN=""')
+    lines.append('if [[ "${1:-}" == "--dryrun" ]]; then')
+    lines.append('  DRY_RUN="--dryrun"')
+    lines.append('  echo "Mode dry-run : aucune suppression effective."')
+    lines.append("fi")
     if endpoint_url:
         lines.append(f'ENDPOINT="--endpoint-url {endpoint_url}"')
     else:
@@ -127,11 +132,19 @@ def generate_delete_script(
             )
         lines.append("")
 
+    lines.append('if [[ -n "$DRY_RUN" ]]; then')
     lines.append(
-        f"echo 'Terminé : {stats.duplicate_objects}"
+        f"  echo 'Dry-run terminé : {stats.duplicate_objects}"
+        f" objets à supprimer,"
+        f" {human_size(stats.wasted_bytes)} récupérables.'"
+    )
+    lines.append("else")
+    lines.append(
+        f"  echo 'Terminé : {stats.duplicate_objects}"
         f" objets supprimés,"
         f" {human_size(stats.wasted_bytes)} récupérés.'"
     )
+    lines.append("fi")
 
     content = "\n".join(lines) + "\n"
     _write_file(output, content)
