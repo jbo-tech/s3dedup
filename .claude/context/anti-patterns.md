@@ -31,8 +31,8 @@ Errors encountered and how to avoid them. Added via `/retro`.
 ### Options click globales vs options de commande
 **Problem**: L'utilisateur passait `--endpoint-url` après la commande (`generate-script --endpoint-url ...`) → erreur "No such option"
 **Cause**: Avec click, les options du groupe parent doivent être placées **avant** le nom de la sous-commande
-**Solution**: Documenter l'ordre : `s3dedup --endpoint-url URL command --options`. Considérer à terme de dupliquer l'option sur chaque commande.
-**Date**: 2026-02-16
+**Solution**: ~~Documenter l'ordre~~ → Résolu en session 6 : option déplacée du groupe vers les sous-commandes. Plus de contrainte d'ordre.
+**Date**: 2026-02-16 (résolu 2026-02-21)
 
 ### mutagen.File() se fie à l'extension du fichier
 **Problem**: Un fichier MP3 renommé en `.flac` provoquait `FLACNoHeaderError` dans mutagen, cassant silencieusement l'extraction de métadonnées
@@ -45,3 +45,9 @@ Errors encountered and how to avoid them. Added via `/retro`.
 **Cause**: Les tests CLI vérifiaient le contenu du CSV par assertion sur les noms de colonnes, couplage entre tests et format de sortie
 **Solution**: Penser à grep tous les tests qui dépendent du format de sortie avant un changement de schema. Un `rg "group_fingerprint" tests/` aurait suffi.
 **Date**: 2026-02-19
+
+### Script bash généré avec dry-run non fonctionnel
+**Problem**: `bash delete.sh --dryrun` supprimait réellement les fichiers au lieu de simuler. Le message final disait "supprimés" dans tous les cas.
+**Cause**: Le dry-run reposait sur une variable commentée à décommenter manuellement (`# DRY_RUN="--dryrun"`). L'argument `$1` du script n'était pas parsé. Personne ne va éditer le script pour activer le dry-run.
+**Solution**: Parser `$1` dans le script (`if [[ "${1:-}" == "--dryrun" ]]`), adapter le message final au mode. L'UX doit être `bash script.sh --dryrun`, pas "éditez le fichier".
+**Date**: 2026-02-21

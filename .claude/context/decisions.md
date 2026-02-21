@@ -39,10 +39,10 @@ Technical decisions and their context. Added via `/retro`.
 **Date**: 2026-02-16
 
 ### Support endpoint S3-compatible (--endpoint-url)
-**Decision**: Option globale `--endpoint-url` sur le groupe CLI + support envvar `AWS_ENDPOINT_URL`
-**Context**: Le bucket cible est sur Mega.io (S3-compatible), pas AWS. `aws sts get-caller-identity` échoue car le endpoint STS n'existe pas chez Mega.
-**Alternatives considered**: Forcer l'usage de LocalStack pour les tests locaux uniquement
-**Date**: 2026-02-16
+**Decision**: Option `--endpoint-url` sur chaque sous-commande qui accède à S3 (`scan`, `generate-script`) + support envvar `AWS_ENDPOINT_URL`
+**Context**: Le bucket cible est sur Mega.io (S3-compatible), pas AWS. Initialement placée sur le groupe CLI, déplacée sur les sous-commandes pour permettre un ordre libre des options (session 6).
+**Alternatives considered**: Forcer l'usage de LocalStack pour les tests locaux uniquement ; garder sur le groupe + dupliquer sur les sous-commandes (risque de conflit)
+**Date**: 2026-02-16 (mise à jour 2026-02-21)
 
 ### Politique de rétention multi-critères
 **Decision**: `--keep` accepte une liste de critères séparés par virgules (ex: `shortest,oldest`). Tri multi-clés, le premier critère est prioritaire.
@@ -79,6 +79,12 @@ Technical decisions and their context. Added via `/retro`.
 **Context**: Seuls les fichiers média ont des métadonnées. Des colonnes nullable sur `objects` pollueraient le schema pour tous les fichiers.
 **Alternatives considered**: Colonnes nullable sur `objects` (plus simple mais schema dilué)
 **Date**: 2026-02-19
+
+### Persistance de l'endpoint URL par bucket
+**Decision**: Table `bucket_config` (bucket → endpoint_url) remplie au `scan`, réutilisée en fallback par `generate-script`
+**Context**: L'utilisateur oubliait de repasser `--endpoint-url` à `generate-script`, ce qui causait des erreurs `InvalidAccessKeyId` sur S3-compatible. L'endpoint est une propriété du bucket, pas de la commande.
+**Alternatives considered**: Variable d'environnement obligatoire (pas persistant entre sessions), fichier de config YAML (surengineering pour un seul champ)
+**Date**: 2026-02-21
 
 ### Critère --keep cleanest basé sur name_quality_score
 **Decision**: Score de qualité du nom (0=parfait), avec pénalités : mojibake (+10), suffixe de copie (+5), espaces parasites (+2).
