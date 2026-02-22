@@ -102,7 +102,8 @@ def scan(bucket, prefix, db_path, extract_metadata, endpoint_url):
         )
         console.print(
             "\n[dim]Étapes suivantes :[/dim]\n"
-            f"  s3dedup report [--format table|json|csv] --db {db_path}\n"
+            f"  s3dedup report [--format table|json|csv|markdown]"
+            f" [--output rapport.md] --db {db_path}\n"
             f"  s3dedup generate-script --bucket {bucket}"
             f" --keep cleanest,shortest,oldest --db {db_path}"
         )

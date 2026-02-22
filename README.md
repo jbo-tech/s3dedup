@@ -52,10 +52,11 @@ uv run s3dedup scan --bucket my-bucket --extract-metadata
 # For S3-compatible services, add --endpoint-url
 uv run s3dedup scan --bucket my-bucket --endpoint-url https://s3.example.com
 
-# 2. View report (table by default, or json/csv)
+# 2. View report (table by default, or json/csv/markdown)
 uv run s3dedup report
 uv run s3dedup report --format json
 uv run s3dedup report --format csv
+uv run s3dedup report --format markdown --output report.md
 
 # 3. Generate a reviewable deletion script
 uv run s3dedup generate-script --bucket my-bucket
@@ -122,7 +123,7 @@ The `cleanest` criterion penalizes:
 2. **Suspect names** — Files with similar normalized names but different content
 3. **Same work, different encoding** — Media files sharing artist + title (requires `--extract-metadata` during scan)
 
-Use `--format json` or `--format csv` for machine-readable output. All three sections are included in every format.
+Use `--format json` or `--format csv` for machine-readable output, or `--format markdown` for a file-friendly report. Add `--output report.md` to write directly to a file instead of stdout. All three sections are included in every format.
 
 ### Deletion script
 
