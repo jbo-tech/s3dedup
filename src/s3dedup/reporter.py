@@ -29,6 +29,8 @@ def generate_report(
         return _to_json(groups, stats, suspect_groups, media_groups)
     if fmt == "csv":
         return _to_csv(groups, stats, suspect_groups, media_groups)
+    if fmt == "markdown":
+        return _to_markdown(groups, stats, suspect_groups, media_groups)
     return _to_table(groups, stats, suspect_groups, media_groups)
 
 
@@ -170,6 +172,83 @@ def _to_table(groups, stats, suspect_groups=None,
         console.print(table)
 
     return console.file.getvalue()
+
+
+def _to_markdown(groups, stats, suspect_groups=None,
+                 media_groups=None) -> str:
+    """Rapport au format Markdown."""
+    lines = [
+        "# Rapport de doublons S3",
+        "",
+        "## Résumé",
+        "",
+        f"- **Objets scannés :** {stats.total_objects}",
+        f"- **Taille totale :** {human_size(stats.total_size)}",
+        f"- **Groupes de doublons :** {stats.duplicate_groups}",
+        f"- **Objets en double :** {stats.duplicate_objects}",
+        f"- **Espace récupérable :** {human_size(stats.wasted_bytes)}",
+        "",
+    ]
+
+    if not groups:
+        lines.append("Aucun doublon détecté.")
+    else:
+        sorted_groups = sorted(
+            groups, key=lambda g: g.wasted_bytes, reverse=True,
+        )
+        lines.append("## Groupes de doublons")
+        lines.append("")
+        lines.append(
+            "| # | Copies | Taille fichier | Espace perdu | Fichiers |"
+        )
+        lines.append(
+            "|---|-------:|---------------:|-------------:|----------|"
+        )
+        for i, g in enumerate(sorted_groups, 1):
+            files = ", ".join(f"`{o.key}`" for o in g.objects)
+            lines.append(
+                f"| {i} | {len(g.objects)} | {human_size(g.size)}"
+                f" | {human_size(g.wasted_bytes)} | {files} |"
+            )
+        lines.append("")
+
+    if suspect_groups:
+        lines.append("## Noms suspects (même nom, contenu différent)")
+        lines.append("")
+        lines.append("| # | Nom normalisé | Fichiers | Tailles |")
+        lines.append("|---|---------------|----------|--------:|")
+        for i, sg in enumerate(suspect_groups, 1):
+            files = ", ".join(f"`{f['key']}`" for f in sg["files"])
+            sizes = ", ".join(
+                human_size(f["size"]) for f in sg["files"]
+            )
+            lines.append(
+                f"| {i} | `{sg['normalized']}` | {files} | {sizes} |"
+            )
+        lines.append("")
+
+    if media_groups:
+        lines.append("## Même œuvre, encodage différent")
+        lines.append("")
+        lines.append(
+            "| # | Artiste | Titre | Fichiers | Codec | Taille |"
+        )
+        lines.append(
+            "|---|---------|-------|----------|-------|-------:|"
+        )
+        for i, mg in enumerate(media_groups, 1):
+            files = ", ".join(f"`{f['key']}`" for f in mg["files"])
+            codecs = ", ".join(f["codec"] or "?" for f in mg["files"])
+            sizes = ", ".join(
+                human_size(f["size"]) for f in mg["files"]
+            )
+            lines.append(
+                f"| {i} | {mg['artist']} | {mg['title']}"
+                f" | {files} | {codecs} | {sizes} |"
+            )
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _to_json(groups, stats, suspect_groups=None,

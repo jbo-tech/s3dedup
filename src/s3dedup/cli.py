@@ -124,7 +124,7 @@ def _make_s3_client(endpoint_url=None):
 @cli.command()
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["table", "json", "csv"]),
+    type=click.Choice(["table", "json", "csv", "markdown"]),
     default="table",
     help="Format du rapport.",
 )
@@ -133,7 +133,12 @@ def _make_s3_client(endpoint_url=None):
     default="s3dedup.duckdb",
     help="Chemin vers la base DuckDB.",
 )
-def report(fmt, db_path):
+@click.option(
+    "--output", "-o",
+    default=None,
+    help="Fichier de sortie (défaut : stdout).",
+)
+def report(fmt, db_path, output):
     """Générer un rapport des doublons détectés."""
     try:
         conn = database.connect(db_path)
@@ -142,8 +147,14 @@ def report(fmt, db_path):
         sys.exit(1)
 
     try:
-        output = generate_report(conn, fmt=fmt)
-        click.echo(output)
+        content = generate_report(conn, fmt=fmt)
+
+        if output:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(content)
+            console.print(f"[green]Rapport écrit :[/green] {output}")
+        else:
+            click.echo(content)
 
         if fmt == "table":
             stats = database.get_stats(conn)
