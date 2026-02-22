@@ -29,6 +29,27 @@ def is_multipart_etag(etag: str) -> bool:
     return "-" in clean and clean.rsplit("-", 1)[-1].isdigit()
 
 
+def _list_objects_pages(s3_client, bucket: str, prefix: str):
+    """Pagination manuelle de ListObjectsV2.
+
+    Certains services S3-compatibles (Mega.io) renvoient le même
+    ContinuationToken deux fois, ce qui fait planter le paginateur boto3.
+    On détecte le token dupliqué et on arrête proprement.
+    """
+    kwargs = {"Bucket": bucket, "Prefix": prefix}
+    prev_token = None
+    while True:
+        resp = s3_client.list_objects_v2(**kwargs)
+        yield resp
+        if not resp.get("IsTruncated"):
+            break
+        token = resp.get("NextContinuationToken")
+        if token == prev_token:
+            break
+        prev_token = token
+        kwargs["ContinuationToken"] = token
+
+
 def scan_bucket(
     bucket: str,
     conn: duckdb.DuckDBPyConnection,
@@ -49,9 +70,6 @@ def scan_bucket(
     seen_keys: set[str] = set()
     batch: list[ObjectInfo] = []
 
-    paginator = s3_client.get_paginator("list_objects_v2")
-    pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
-
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -62,7 +80,7 @@ def scan_bucket(
             status="0 nouveaux, 0 modifiés",
         )
 
-        for page in pages:
+        for page in _list_objects_pages(s3_client, bucket, prefix):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 # Ignorer les objets vides (marqueurs de dossier S3)
