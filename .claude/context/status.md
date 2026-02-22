@@ -4,9 +4,22 @@
 Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie.
 
 ## Current focus
-Endpoint persisté, dry-run corrigé. README mis à jour. Prêt pour utilisation réelle.
+Pagination Mega.io corrigée. En cours de test sur le bucket réel (2.7 To, prefix Music-Various-Artists/).
 
 ## Log
+
+### 2026-02-21 (session 9)
+- Done:
+  - Persistance endpoint URL : table `bucket_config`, auto-fallback dans `generate-script`
+  - Fix dry-run : parse `$1` au lieu de variable commentée
+  - Fix pagination Mega.io : pagination manuelle remplaçant le paginateur boto3 (détection token dupliqué)
+  - README mis à jour : section Reset, Database, dry-run simplifié
+  - 2 commits poussés (feat + chore context)
+  - 160 tests OK, ruff clean
+- Next:
+  - Relancer le scan sur Music-Various-Artists/ avec le fix pagination
+  - Tester `--extract-metadata` sur le bucket réel
+  - Mettre à jour scope.md
 
 ### 2026-02-21 (session 8)
 - Done:
@@ -14,9 +27,6 @@ Endpoint persisté, dry-run corrigé. README mis à jour. Prêt pour utilisation
   - Message final adapté au mode (dry-run vs réel)
   - README mis à jour : section Reset, section Database (3 tables), doc endpoint persisté, dry-run simplifié
   - 160 tests OK, ruff clean
-- Next:
-  - Tester `--extract-metadata` sur le bucket réel
-  - Mettre à jour scope.md
 
 ### 2026-02-21 (session 7)
 - Done:

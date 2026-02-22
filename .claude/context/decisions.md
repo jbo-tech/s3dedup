@@ -86,6 +86,12 @@ Technical decisions and their context. Added via `/retro`.
 **Alternatives considered**: Variable d'environnement obligatoire (pas persistant entre sessions), fichier de config YAML (surengineering pour un seul champ)
 **Date**: 2026-02-21
 
+### Pagination manuelle pour S3-compatible
+**Decision**: Remplacer `paginator.paginate()` par une boucle manuelle `_list_objects_pages()` avec détection de token dupliqué.
+**Context**: Mega.io renvoie le même `NextContinuationToken` deux fois, crashant le paginateur boto3. La pagination manuelle permet de s'arrêter proprement et de compléter via scans incrémentaux.
+**Alternatives considered**: Catch de l'exception du paginateur (perd les objets du dernier batch non flushé), patch du paginateur boto3 (trop invasif)
+**Date**: 2026-02-21
+
 ### Critère --keep cleanest basé sur name_quality_score
 **Decision**: Score de qualité du nom (0=parfait), avec pénalités : mojibake (+10), suffixe de copie (+5), espaces parasites (+2).
 **Context**: Sur une médiathèque, les copies dégradées ont souvent des noms cassés. Le score permet de garder automatiquement le "meilleur" nom.

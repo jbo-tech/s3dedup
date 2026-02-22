@@ -51,3 +51,9 @@ Errors encountered and how to avoid them. Added via `/retro`.
 **Cause**: Le dry-run reposait sur une variable commentée à décommenter manuellement (`# DRY_RUN="--dryrun"`). L'argument `$1` du script n'était pas parsé. Personne ne va éditer le script pour activer le dry-run.
 **Solution**: Parser `$1` dans le script (`if [[ "${1:-}" == "--dryrun" ]]`), adapter le message final au mode. L'UX doit être `bash script.sh --dryrun`, pas "éditez le fichier".
 **Date**: 2026-02-21
+
+### Paginateur boto3 et services S3-compatibles
+**Problem**: Scan crashait à ~1000 objets avec `The same next token was received twice` sur Mega.io (2.7 To, prefix Music-Various-Artists/).
+**Cause**: Le paginateur boto3 a une protection anti-boucle infinie : si le serveur renvoie le même `NextContinuationToken` deux fois, il lève une erreur. Mega.io fait exactement ça.
+**Solution**: Pagination manuelle (`_list_objects_pages`) au lieu de `paginator.paginate()`. Détecte le token dupliqué et s'arrête proprement. Les scans suivants complèteront les manquants (incrémental).
+**Date**: 2026-02-21
