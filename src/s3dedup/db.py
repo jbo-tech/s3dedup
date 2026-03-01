@@ -349,6 +349,18 @@ def set_bucket_config(
     return None
 
 
+def get_all_keys(
+    conn: duckdb.DuckDBPyConnection,
+    prefix: str = "",
+) -> list[str]:
+    """Retourne toutes les clés stockées, filtrées par préfixe optionnel."""
+    rows = conn.execute(
+        "SELECT key FROM objects WHERE key LIKE ? ORDER BY key",
+        [prefix + "%"],
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 def get_bucket_config(
     conn: duckdb.DuckDBPyConnection,
     bucket: str,

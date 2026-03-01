@@ -9,6 +9,7 @@ Works with AWS S3 and S3-compatible services (Mega.io, MinIO, LocalStack, etc.).
 - **Byte-identical deduplication** — 3-pass detection (size → ETag → SHA256), incremental scans
 - **Suspect name detection** — Find files with similar names but different content (encoding issues, copy suffixes, extra spaces)
 - **Media metadata grouping** — Extract audio/video tags to find same-work-different-encoding duplicates (e.g. FLAC vs MP3)
+- **Key cleaning** — Generate rename scripts to fix leading/trailing spaces in S3 keys, with extensible rule system
 - **Smart retention policy** — `--keep cleanest,shortest,oldest` to automatically prefer clean filenames
 
 ## How it works
@@ -52,13 +53,19 @@ uv run s3dedup scan --bucket my-bucket --extract-metadata
 # For S3-compatible services, add --endpoint-url
 uv run s3dedup scan --bucket my-bucket --endpoint-url https://s3.example.com
 
-# 2. View report (table by default, or json/csv/markdown)
+# 2. Clean up S3 keys (fix leading/trailing spaces)
+uv run s3dedup clean --bucket my-bucket
+cat clean.sh              # review the rename script
+bash clean.sh             # execute renames
+bash clean.sh --dryrun    # preview without renaming
+
+# 3. View report (table by default, or json/csv/markdown)
 uv run s3dedup report
 uv run s3dedup report --format json
 uv run s3dedup report --format csv
 uv run s3dedup report --format markdown --output report.md
 
-# 3. Generate a reviewable deletion script
+# 4. Generate a reviewable deletion script
 uv run s3dedup generate-script --bucket my-bucket
 ```
 
@@ -125,6 +132,20 @@ The `cleanest` criterion penalizes:
 
 Use `--format json` or `--format csv` for machine-readable output, or `--format markdown` for a file-friendly report. Add `--output report.md` to write directly to a file instead of stdout. All three sections are included in every format.
 
+### Cleaning script
+
+`clean` generates an executable bash script with `aws s3 mv` commands to rename keys with leading/trailing spaces:
+
+```bash
+uv run s3dedup clean --bucket my-bucket                          # default: strip-spaces rule
+uv run s3dedup clean --bucket my-bucket --prefix Music/          # only clean keys under a prefix
+uv run s3dedup clean --bucket my-bucket --rules strip-spaces     # explicit rule selection
+```
+
+- **Conflict resolution**: if the target key already exists, a suffix is added (`photo_2.jpg`, `photo_3.jpg`, etc.)
+- **Extensible**: the `--rules` option accepts a comma-separated list of rules. Currently available: `strip-spaces`
+- After running the clean script, rescan to update the index: `uv run s3dedup scan --bucket my-bucket`
+
 ### Deletion script
 
 `generate-script` creates an executable bash script with `aws s3 rm` commands:
@@ -146,12 +167,12 @@ Uses the standard boto3 credential chain (environment variables, `~/.aws/credent
 
 For S3-compatible services, set `--endpoint-url` or the `AWS_ENDPOINT_URL` environment variable.
 
-The endpoint URL is saved in the database during `scan`. Subsequent commands (`generate-script`) will reuse it automatically — no need to pass `--endpoint-url` again.
+The endpoint URL is saved in the database during `scan`. Subsequent commands (`clean`, `generate-script`) will reuse it automatically — no need to pass `--endpoint-url` again.
 
 ## Development
 
 ```bash
-uv run pytest           # run tests (150)
+uv run pytest           # run tests (175)
 uv run ruff check .     # lint
 ```
 

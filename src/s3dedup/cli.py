@@ -7,6 +7,7 @@ import click
 from rich.console import Console
 
 from s3dedup import db as database
+from s3dedup.cleaner import generate_clean_script
 from s3dedup.hasher import hash_multipart_candidates
 from s3dedup.reporter import generate_report
 from s3dedup.scanner import extract_all_media_metadata, scan_bucket
@@ -225,6 +226,71 @@ def generate_script(bucket, keep, db_path, output, endpoint_url):
             "[dim]Vérifier puis lancer :[/dim]\n"
             f"  cat {output}        # relire le script\n"
             f"  bash {output}       # exécuter les suppressions"
+        )
+    except Exception as e:
+        console.print(f"[red]Erreur :[/red] {e}")
+        sys.exit(1)
+    finally:
+        conn.close()
+
+
+@cli.command()
+@click.option(
+    "--bucket", required=True, help="Nom du bucket S3.",
+)
+@click.option("--prefix", default="", help="Préfixe pour filtrer les clés.")
+@click.option(
+    "--rules",
+    default="strip-spaces",
+    help="Règles de nettoyage, séparées par virgules.",
+)
+@click.option(
+    "--db", "db_path",
+    default="s3dedup.duckdb",
+    help="Chemin vers la base DuckDB.",
+)
+@click.option(
+    "--output",
+    default="clean.sh",
+    help="Fichier de sortie.",
+)
+@click.option(
+    "--endpoint-url",
+    envvar="AWS_ENDPOINT_URL",
+    default=None,
+    help="URL du endpoint S3 (pour les services S3-compatibles).",
+)
+def clean(bucket, prefix, rules, db_path, output, endpoint_url):
+    """Générer un script de renommage pour nettoyer les clés S3."""
+    try:
+        conn = database.connect(db_path)
+    except Exception as e:
+        console.print(f"[red]Erreur DB :[/red] {e}")
+        sys.exit(1)
+
+    try:
+        # Fallback sur l'endpoint stocké lors du scan
+        if not endpoint_url:
+            stored = database.get_bucket_config(conn, bucket)
+            if stored:
+                endpoint_url = stored
+                console.print(
+                    f"[dim]Endpoint depuis le scan :[/dim] {endpoint_url}"
+                )
+
+        rule_list = [r.strip() for r in rules.split(",")]
+        generate_clean_script(
+            conn, bucket,
+            rules=rule_list,
+            prefix=prefix,
+            output=output,
+            endpoint_url=endpoint_url,
+        )
+        console.print(f"[green]Script généré :[/green] {output}")
+        console.print(
+            "[dim]Vérifier puis lancer :[/dim]\n"
+            f"  cat {output}        # relire le script\n"
+            f"  bash {output}       # exécuter les renommages"
         )
     except Exception as e:
         console.print(f"[red]Erreur :[/red] {e}")
