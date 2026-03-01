@@ -92,6 +92,12 @@ Technical decisions and their context. Added via `/retro`.
 **Alternatives considered**: Catch de l'exception du paginateur (perd les objets du dernier batch non flushé), patch du paginateur boto3 (trop invasif)
 **Date**: 2026-02-21
 
+### Commande clean : architecture extensible par règles
+**Decision**: Architecture à base de `CleanRule` ABC avec registre de règles nommées. Première règle : `StripSpacesRule`. Script bash de renommage (`aws s3 mv`), jamais de renommage direct.
+**Context**: Les clés S3 avec espaces parasites causent des confusions. Le workflow est `scan` → `clean` → `scan` → `report`/`generate-script`. L'architecture par règles permet d'ajouter facilement d'autres nettoyages (unicode normalization, etc.) sans modifier le moteur.
+**Alternatives considered**: Commande monolithique avec logique en dur (pas extensible), renommage direct via l'API S3 (irréversible, pas reviewable)
+**Date**: 2026-03-01
+
 ### Critère --keep cleanest basé sur name_quality_score
 **Decision**: Score de qualité du nom (0=parfait), avec pénalités : mojibake (+10), suffixe de copie (+5), espaces parasites (+2).
 **Context**: Sur une médiathèque, les copies dégradées ont souvent des noms cassés. Le score permet de garder automatiquement le "meilleur" nom.

@@ -1,12 +1,26 @@
 # Status
 
 ## Objective
-Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie.
+Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
 
 ## Current focus
-Pagination Mega.io corrigée. En cours de test sur le bucket réel (2.7 To, prefix Music-Various-Artists/).
+Commande `clean` implémentée. Prête pour test sur le bucket réel.
 
 ## Log
+
+### 2026-03-01 (session 10)
+- Done:
+  - Commande `clean` : génère un script bash de renommage (`aws s3 mv`) pour nettoyer les clés S3
+  - Architecture extensible par règles : `CleanRule` ABC + `StripSpacesRule` (espaces début/fin par segment)
+  - Détection et résolution de conflits : suffixage automatique (`_2`, `_3`...) si la cible existe déjà
+  - `get_all_keys()` ajouté à `db.py`
+  - 20 tests dédiés dans `test_cleaner.py`
+  - CLAUDE.md mis à jour (section Commands)
+  - 175 tests OK, ruff clean
+- Next:
+  - Tester `clean` sur le bucket réel (Mega.io)
+  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
+  - Ajouter d'autres règles de nettoyage si besoin (unicode normalization, etc.)
 
 ### 2026-02-21 (session 9)
 - Done:
