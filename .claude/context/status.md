@@ -4,9 +4,20 @@
 Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
 
 ## Current focus
-Commande `clean` implémentée. Prête pour test sur le bucket réel.
+Commande `clean` testée sur le bucket réel. Fix `--copy-props metadata-directive` appliqué pour compatibilité Mega S4.
 
 ## Log
+
+### 2026-03-01 (session 11)
+- Done:
+  - Diagnostic erreur `GetObjectTagging` sur Mega S4 lors de `aws s3 mv`
+  - Test réel avec `--copy-props metadata-directive` sur fichier `TV/ test.txt` → succès
+  - Fix appliqué dans `cleaner.py` : ajout `--copy-props metadata-directive` aux commandes `aws s3 mv` générées
+  - 20 tests cleaner OK
+- Next:
+  - Régénérer `clean.sh` et relancer sur le bucket réel
+  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
+  - Ajouter d'autres règles de nettoyage si besoin (unicode normalization, etc.)
 
 ### 2026-03-01 (session 10)
 - Done:

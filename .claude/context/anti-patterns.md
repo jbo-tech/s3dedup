@@ -57,3 +57,9 @@ Errors encountered and how to avoid them. Added via `/retro`.
 **Cause**: Le paginateur boto3 a une protection anti-boucle infinie : si le serveur renvoie le même `NextContinuationToken` deux fois, il lève une erreur. Mega.io fait exactement ça.
 **Solution**: Pagination manuelle (`_list_objects_pages`) au lieu de `paginator.paginate()`. Détecte le token dupliqué et s'arrête proprement. Les scans suivants complèteront les manquants (incrémental).
 **Date**: 2026-02-21
+
+### aws s3 mv et GetObjectTagging sur S3-compatible
+**Problem**: `aws s3 mv` échoue avec `NotImplemented` sur `GetObjectTagging` (Mega S4)
+**Cause**: Par défaut, `aws s3 mv` copie toutes les propriétés (métadonnées + tags). L'opération `GetObjectTagging` n'est pas implémentée par tous les services S3-compatible.
+**Solution**: Ajouter `--copy-props metadata-directive` pour copier les métadonnées (Content-Type, dates) sans les tags. Ne pas utiliser `--copy-props none` (trop agressif, perd les métadonnées).
+**Date**: 2026-03-01

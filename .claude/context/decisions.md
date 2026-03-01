@@ -98,6 +98,12 @@ Technical decisions and their context. Added via `/retro`.
 **Alternatives considered**: Commande monolithique avec logique en dur (pas extensible), renommage direct via l'API S3 (irréversible, pas reviewable)
 **Date**: 2026-03-01
 
+### --copy-props metadata-directive pour aws s3 mv
+**Decision**: Utiliser `--copy-props metadata-directive` dans les scripts de renommage générés par `clean`
+**Context**: `aws s3 mv` copie par défaut les tags (`GetObjectTagging`), non supporté par Mega S4 et potentiellement d'autres S3-compatible. `metadata-directive` préserve les métadonnées utiles (Content-Type, dates) sans toucher aux tags.
+**Alternatives considered**: `--copy-props none` (trop agressif, perd les métadonnées), `--copy-props default` (échoue sur S3-compatible sans tagging)
+**Date**: 2026-03-01
+
 ### Critère --keep cleanest basé sur name_quality_score
 **Decision**: Score de qualité du nom (0=parfait), avec pénalités : mojibake (+10), suffixe de copie (+5), espaces parasites (+2).
 **Context**: Sur une médiathèque, les copies dégradées ont souvent des noms cassés. Le score permet de garder automatiquement le "meilleur" nom.
