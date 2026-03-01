@@ -279,19 +279,33 @@ def clean(bucket, prefix, rules, db_path, output, endpoint_url):
                 )
 
         rule_list = [r.strip() for r in rules.split(",")]
-        generate_clean_script(
+        stats = generate_clean_script(
             conn, bucket,
             rules=rule_list,
             prefix=prefix,
             output=output,
             endpoint_url=endpoint_url,
         )
-        console.print(f"[green]Script généré :[/green] {output}")
+
+        # Bilan
         console.print(
-            "[dim]Vérifier puis lancer :[/dim]\n"
-            f"  cat {output}        # relire le script\n"
-            f"  bash {output}       # exécuter les renommages"
+            f"\nAnalyse terminée : [bold]{stats.rename_count}[/bold]"
+            f" renommage(s) détecté(s) sur"
+            f" [bold]{stats.total_keys}[/bold] clés analysées."
         )
+        if stats.per_rule:
+            for rule_name, count in sorted(stats.per_rule.items()):
+                console.print(f"  - {rule_name} : {count} clé(s)")
+
+        if stats.rename_count == 0:
+            console.print("[dim]Rien à faire.[/dim]")
+        else:
+            console.print(f"[green]Script généré :[/green] {output}")
+            console.print(
+                "[dim]Vérifier puis lancer :[/dim]\n"
+                f"  cat {output}        # relire le script\n"
+                f"  bash {output}       # exécuter les renommages"
+            )
     except Exception as e:
         console.print(f"[red]Erreur :[/red] {e}")
         sys.exit(1)

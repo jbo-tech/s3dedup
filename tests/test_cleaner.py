@@ -83,23 +83,31 @@ class TestGenerateCleanScript:
         conn = connect(":memory:")
         upsert_objects(conn, [_obj(" photo.jpg"), _obj("normal.jpg")])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(
+        stats = generate_clean_script(
             conn, "my-bucket", output=output,
         )
+        content = (tmp_path / "clean.sh").read_text()
         assert "#!/usr/bin/env bash" in content
         assert "aws s3 mv" in content
         assert "s3://my-bucket/ photo.jpg" in content
         assert "s3://my-bucket/photo.jpg" in content
+        assert stats.total_keys == 2
+        assert stats.rename_count == 1
+        assert stats.per_rule == {"strip-spaces": 1}
 
     def test_no_rename_needed(self, tmp_path):
         conn = connect(":memory:")
         upsert_objects(conn, [_obj("clean.jpg")])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(
+        stats = generate_clean_script(
             conn, "my-bucket", output=output,
         )
+        content = (tmp_path / "clean.sh").read_text()
         assert "Aucun renommage" in content
         assert "aws s3 mv" not in content
+        assert stats.total_keys == 1
+        assert stats.rename_count == 0
+        assert stats.per_rule == {}
 
     def test_executable(self, tmp_path):
         conn = connect(":memory:")
@@ -112,17 +120,19 @@ class TestGenerateCleanScript:
         conn = connect(":memory:")
         upsert_objects(conn, [_obj(" photo.jpg")])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(conn, "b", output=output)
+        generate_clean_script(conn, "b", output=output)
+        content = (tmp_path / "clean.sh").read_text()
         assert "DRY_RUN" in content
 
     def test_endpoint_url(self, tmp_path):
         conn = connect(":memory:")
         upsert_objects(conn, [_obj(" photo.jpg")])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(
+        generate_clean_script(
             conn, "b", output=output,
             endpoint_url="http://localhost:9000",
         )
+        content = (tmp_path / "clean.sh").read_text()
         assert "http://localhost:9000" in content
 
     def test_special_chars_escaping(self, tmp_path):
@@ -130,7 +140,8 @@ class TestGenerateCleanScript:
         conn = connect(":memory:")
         upsert_objects(conn, [_obj(" l'album.mp3")])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(conn, "b", output=output)
+        generate_clean_script(conn, "b", output=output)
+        content = (tmp_path / "clean.sh").read_text()
         assert "'\\''" in content
 
     def test_conflict_resolved_with_suffix(self, tmp_path):
@@ -141,7 +152,8 @@ class TestGenerateCleanScript:
             _obj("photo.jpg"),
         ])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(conn, "b", output=output)
+        generate_clean_script(conn, "b", output=output)
+        content = (tmp_path / "clean.sh").read_text()
         assert "photo_2.jpg" in content
         assert "Conflit résolu" in content
 
@@ -153,9 +165,10 @@ class TestGenerateCleanScript:
             _obj("dir2/ other.jpg"),
         ])
         output = str(tmp_path / "clean.sh")
-        content = generate_clean_script(
+        generate_clean_script(
             conn, "b", prefix="dir1/", output=output,
         )
+        content = (tmp_path / "clean.sh").read_text()
         assert "dir1/" in content
         assert "dir2/" not in content
 

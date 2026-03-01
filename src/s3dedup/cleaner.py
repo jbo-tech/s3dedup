@@ -5,11 +5,21 @@ from __future__ import annotations
 import os
 import posixpath
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import duckdb
 
 from s3dedup.db import get_all_keys
+
+
+@dataclass
+class CleanStats:
+    """Bilan d'une opération de nettoyage."""
+
+    total_keys: int = 0
+    rename_count: int = 0
+    per_rule: dict[str, int] = field(default_factory=dict)
 
 
 class CleanRule(ABC):
@@ -94,10 +104,10 @@ def generate_clean_script(
     prefix: str = "",
     output: str = "clean.sh",
     endpoint_url: str | None = None,
-) -> str:
+) -> CleanStats:
     """Génère un script bash de renommage des clés S3.
 
-    Retourne le contenu du script.
+    Retourne les statistiques de l'opération.
     """
     if rules is None:
         rules = ["strip-spaces"]
@@ -109,7 +119,9 @@ def generate_clean_script(
     all_keys = get_all_keys(conn, prefix=prefix)
     existing_keys = set(all_keys)
 
-    # Appliquer les règles
+    stats = CleanStats(total_keys=len(all_keys))
+
+    # Appliquer les règles et compter par règle
     renames: dict[str, str] = {}
     for key in all_keys:
         cleaned = key
@@ -117,13 +129,16 @@ def generate_clean_script(
             result = rule.apply(cleaned)
             if result is not None:
                 cleaned = result
+                stats.per_rule[rule.name] = stats.per_rule.get(rule.name, 0) + 1
         if cleaned != key:
             renames[key] = cleaned
+
+    stats.rename_count = len(renames)
 
     if not renames:
         content = _build_script_no_rename(bucket, endpoint_url)
         _write_file(output, content)
-        return content
+        return stats
 
     # Résoudre les conflits
     resolved = _resolve_conflicts(renames, existing_keys)
@@ -131,7 +146,7 @@ def generate_clean_script(
     # Générer le script
     content = _build_script(bucket, resolved, renames, endpoint_url)
     _write_file(output, content)
-    return content
+    return stats
 
 
 def _instantiate_rules(rule_names: list[str]) -> list[CleanRule]:
@@ -183,7 +198,8 @@ def _build_script(
             )
 
         lines.append(
-            f"aws s3 mv ${{DRY_RUN:-}} $ENDPOINT"
+            f"aws s3 mv --copy-props metadata-directive"
+            f" ${{DRY_RUN:-}} $ENDPOINT"
             f" 's3://{bucket}/{src_escaped}'"
             f" 's3://{bucket}/{tgt_escaped}'"
         )
