@@ -54,10 +54,11 @@ uv run s3dedup scan --bucket my-bucket --extract-metadata
 uv run s3dedup scan --bucket my-bucket --endpoint-url https://s3.example.com
 
 # 2. Clean up S3 keys (fix leading/trailing spaces)
-uv run s3dedup clean --bucket my-bucket
+uv run s3dedup clean --bucket my-bucket    # generates clean.sh from the scan index
 cat clean.sh              # review the rename script
 bash clean.sh             # execute renames
 bash clean.sh --dryrun    # preview without renaming
+uv run s3dedup scan --bucket my-bucket     # rescan to update the index
 
 # 3. View report (table by default, or json/csv/markdown)
 uv run s3dedup report
@@ -144,7 +145,7 @@ uv run s3dedup clean --bucket my-bucket --rules strip-spaces     # explicit rule
 
 - **Conflict resolution**: if the target key already exists, a suffix is added (`photo_2.jpg`, `photo_3.jpg`, etc.)
 - **Extensible**: the `--rules` option accepts a comma-separated list of rules. Currently available: `strip-spaces`
-- After running the clean script, rescan to update the index: `uv run s3dedup scan --bucket my-bucket`
+- **Important**: `clean` reads keys from the local DuckDB index, not from S3 directly. Always `scan` before generating the script, and rescan after running it to update the index.
 
 ### Deletion script
 
