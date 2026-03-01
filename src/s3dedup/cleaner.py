@@ -184,6 +184,11 @@ def _build_script(
     """Génère le script bash complet de renommage."""
     lines = _header(bucket, len(resolved), endpoint_url)
 
+    total = len(resolved)
+    lines.append(f"TOTAL={total}")
+    lines.append("COUNT=0")
+    lines.append("")
+
     for src in sorted(resolved.keys()):
         tgt = resolved[src]
         original_tgt = original_renames[src]
@@ -197,6 +202,11 @@ def _build_script(
                 f" → renommé en '{tgt}'"
             )
 
+        lines.append("COUNT=$((COUNT + 1))")
+        lines.append(
+            f"echo \"[$COUNT/$TOTAL] '{src_escaped}'"
+            f" → '{tgt_escaped}'\""
+        )
         lines.append(
             f"aws s3 mv --copy-props metadata-directive"
             f" ${{DRY_RUN:-}} $ENDPOINT"
