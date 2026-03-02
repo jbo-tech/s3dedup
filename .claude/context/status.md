@@ -4,9 +4,21 @@
 Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
 
 ## Current focus
-Extraction de métadonnées parallélisée. Prêt à relancer `scan --extract-metadata` sur le bucket réel.
+Nettoyage des dossiers vides après exécution du script `clean.sh`. Prêt à régénérer et relancer.
 
 ## Log
+
+### 2026-03-02 (session 13)
+- Done:
+  - Fix dossiers vides après `clean.sh` : nouvelle fonction `_collect_empty_dirs()` dans `cleaner.py`
+  - Le script généré inclut maintenant des `aws s3 rm` pour supprimer les marqueurs de dossiers vides
+  - Suppression du plus profond au moins profond, respecte `--dryrun`
+  - Pas de suppression si le dossier contient encore des fichiers
+  - 2 nouveaux tests, 22 tests cleaner OK, ruff clean
+- Next:
+  - Régénérer `clean.sh` et relancer sur le bucket réel
+  - Relancer `scan --extract-metadata` avec le parallélisme (32+ threads)
+  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
 
 ### 2026-03-02 (session 12)
 - Done:
