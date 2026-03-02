@@ -42,7 +42,13 @@ def cli():
     default=None,
     help="URL du endpoint S3 (pour les services S3-compatibles).",
 )
-def scan(bucket, prefix, db_path, extract_metadata, endpoint_url):
+@click.option(
+    "--workers",
+    type=int,
+    default=None,
+    help="Threads pour l'extraction métadonnées (défaut : 32, env S3DEDUP_WORKERS).",
+)
+def scan(bucket, prefix, db_path, extract_metadata, endpoint_url, workers):
     """Scanner un bucket S3 et indexer les objets."""
     try:
         conn = database.connect(db_path)
@@ -88,6 +94,7 @@ def scan(bucket, prefix, db_path, extract_metadata, endpoint_url):
         if extract_metadata:
             enriched = extract_all_media_metadata(
                 bucket, conn, s3_client=s3_client,
+                workers=workers,
             )
             if enriched:
                 console.print(

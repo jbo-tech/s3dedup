@@ -1,5 +1,8 @@
 """Scanner S3 — listing paginé et indexation dans DuckDB."""
 
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import boto3
 import duckdb
 from rich.progress import (
@@ -21,6 +24,9 @@ from s3dedup.models import ObjectInfo, ScanResult
 
 # Taille du batch pour l'upsert en base
 BATCH_SIZE = 1000
+
+# Nombre de threads pour l'extraction parallèle de métadonnées
+DEFAULT_WORKERS = 32
 
 
 def is_multipart_etag(etag: str) -> bool:
@@ -137,8 +143,12 @@ def extract_all_media_metadata(
     bucket: str,
     conn: duckdb.DuckDBPyConnection,
     s3_client=None,
+    workers: int | None = None,
 ) -> int:
     """Extrait les métadonnées des fichiers média non encore enrichis.
+
+    Utilise un pool de threads pour paralléliser les requêtes S3
+    (I/O-bound). Les écritures DuckDB restent sur le thread principal.
 
     Retourne le nombre de fichiers traités.
     """
@@ -159,6 +169,9 @@ def extract_all_media_metadata(
     if not media_keys:
         return 0
 
+    if workers is None:
+        workers = int(os.environ.get("S3DEDUP_WORKERS", DEFAULT_WORKERS))
+
     processed = 0
     batch = []
 
@@ -173,17 +186,23 @@ def extract_all_media_metadata(
             total=len(media_keys),
         )
 
-        for key in media_keys:
-            meta = extract_metadata(s3_client, bucket, key)
-            if meta is not None:
-                batch.append(meta)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(extract_metadata, s3_client, bucket, key): key
+                for key in media_keys
+            }
 
-            if len(batch) >= BATCH_SIZE:
-                upsert_media_metadata(conn, batch)
-                batch.clear()
+            for future in as_completed(futures):
+                meta = future.result()
+                if meta is not None:
+                    batch.append(meta)
 
-            processed += 1
-            progress.advance(task)
+                if len(batch) >= BATCH_SIZE:
+                    upsert_media_metadata(conn, batch)
+                    batch.clear()
+
+                processed += 1
+                progress.advance(task)
 
         if batch:
             upsert_media_metadata(conn, batch)
