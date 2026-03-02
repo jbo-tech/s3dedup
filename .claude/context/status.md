@@ -4,9 +4,21 @@
 Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
 
 ## Current focus
-Commande `clean` testée sur le bucket réel. Fix `--copy-props metadata-directive` appliqué pour compatibilité Mega S4.
+Extraction de métadonnées parallélisée. Prêt à relancer `scan --extract-metadata` sur le bucket réel.
 
 ## Log
+
+### 2026-03-02 (session 12)
+- Done:
+  - Parallélisation de `extract_all_media_metadata` avec `ThreadPoolExecutor` (32 threads par défaut)
+  - Nouvelle option `--workers` sur `scan` + variable d'env `S3DEDUP_WORKERS`
+  - Les écritures DuckDB restent sur le thread principal (thread-safety)
+  - 180 tests OK, ruff clean
+- Context: scan réel avec `--extract-metadata` → 12374/473632 fichiers en 4h (séquentiel). Estimation : ~160h. Avec 32 threads → ~5h.
+- Next:
+  - Relancer `scan --extract-metadata` sur le bucket réel avec le parallélisme
+  - Ajuster `--workers` selon la perf observée (32 → 64 si le réseau le permet)
+  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
 
 ### 2026-03-01 (session 11)
 - Done:

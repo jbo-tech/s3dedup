@@ -104,6 +104,12 @@ Technical decisions and their context. Added via `/retro`.
 **Alternatives considered**: `--copy-props none` (trop agressif, perd les métadonnées), `--copy-props default` (échoue sur S3-compatible sans tagging)
 **Date**: 2026-03-01
 
+### Parallélisme ThreadPoolExecutor pour l'extraction métadonnées
+**Decision**: `concurrent.futures.ThreadPoolExecutor` (32 threads par défaut) pour paralléliser les requêtes S3 dans `extract_all_media_metadata`. Écritures DuckDB sur le thread principal.
+**Context**: L'extraction séquentielle de 473K fichiers prenait ~160h (I/O-bound, latence réseau S3). Avec 32 threads → ~5h. Configurable via `--workers` ou `S3DEDUP_WORKERS`.
+**Alternatives considered**: `multiprocessing` (inutile pour I/O-bound, overhead mémoire), `asyncio`+`aioboto3` (refactoring trop invasif du code existant synchrone), extraction ciblée sur les doublons uniquement (pas applicable car l'extraction sert justement à découvrir des doublons sémantiques)
+**Date**: 2026-03-02
+
 ### Critère --keep cleanest basé sur name_quality_score
 **Decision**: Score de qualité du nom (0=parfait), avec pénalités : mojibake (+10), suffixe de copie (+5), espaces parasites (+2).
 **Context**: Sur une médiathèque, les copies dégradées ont souvent des noms cassés. Le score permet de garder automatiquement le "meilleur" nom.
