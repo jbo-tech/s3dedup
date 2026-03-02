@@ -144,7 +144,7 @@ def generate_clean_script(
     resolved = _resolve_conflicts(renames, existing_keys)
 
     # Générer le script
-    content = _build_script(bucket, resolved, renames, endpoint_url)
+    content = _build_script(bucket, resolved, renames, endpoint_url, existing_keys)
     _write_file(output, content)
     return stats
 
@@ -175,11 +175,44 @@ def _build_script_no_rename(
     return "\n".join(lines) + "\n"
 
 
+def _collect_empty_dirs(
+    resolved: dict[str, str],
+    all_keys: set[str],
+) -> list[str]:
+    """Identifie les préfixes (dossiers) qui deviennent vides après les renommages.
+
+    Retourne la liste triée du plus profond au moins profond.
+    """
+    # Simuler l'état final : clés non déplacées + nouvelles cibles
+    moved_sources = set(resolved.keys())
+    remaining = (all_keys - moved_sources) | set(resolved.values())
+
+    # Collecter tous les répertoires parents des clés sources déplacées
+    source_dirs: set[str] = set()
+    for src in resolved:
+        parts = src.split("/")
+        # Accumuler tous les niveaux de répertoire
+        for i in range(1, len(parts)):
+            source_dirs.add("/".join(parts[:i]))
+
+    # Ne garder que ceux qui n'ont plus aucun fichier en-dessous
+    empty_dirs = []
+    for d in source_dirs:
+        prefix = d + "/"
+        if not any(k.startswith(prefix) for k in remaining):
+            empty_dirs.append(d)
+
+    # Trier du plus profond au moins profond
+    empty_dirs.sort(key=lambda d: d.count("/"), reverse=True)
+    return empty_dirs
+
+
 def _build_script(
     bucket: str,
     resolved: dict[str, str],
     original_renames: dict[str, str],
     endpoint_url: str | None,
+    all_keys: set[str] | None = None,
 ) -> str:
     """Génère le script bash complet de renommage."""
     lines = _header(bucket, len(resolved), endpoint_url)
@@ -213,6 +246,19 @@ def _build_script(
             f" 's3://{bucket}/{src_escaped}'"
             f" 's3://{bucket}/{tgt_escaped}'"
         )
+
+    # Nettoyage des dossiers vides
+    if all_keys is not None:
+        empty_dirs = _collect_empty_dirs(resolved, all_keys)
+        if empty_dirs:
+            lines.append("")
+            lines.append("# Suppression des dossiers vides")
+            for d in empty_dirs:
+                d_escaped = d.replace("'", "'\\''")
+                lines.append(
+                    f"aws s3 rm ${{DRY_RUN:-}} $ENDPOINT"
+                    f" 's3://{bucket}/{d_escaped}/'"
+                )
 
     lines.append("")
     lines.append('if [[ -n "$DRY_RUN" ]]; then')

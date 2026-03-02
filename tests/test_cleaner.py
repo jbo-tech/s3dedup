@@ -172,6 +172,38 @@ class TestGenerateCleanScript:
         assert "dir1/" in content
         assert "dir2/" not in content
 
+    def test_empty_dirs_cleanup(self, tmp_path):
+        """Les dossiers vides sont supprimés après les renommages."""
+        conn = connect(":memory:")
+        upsert_objects(conn, [
+            _obj("Music/ Artist / Album /track.mp3"),
+            _obj("Music/other.mp3"),
+        ])
+        output = str(tmp_path / "clean.sh")
+        generate_clean_script(conn, "b", output=output)
+        content = (tmp_path / "clean.sh").read_text()
+        # Doit contenir la suppression des dossiers vides
+        assert "# Suppression des dossiers vides" in content
+        assert "aws s3 rm" in content
+        # Le dossier le plus profond d'abord
+        rm_lines = [line for line in content.splitlines() if "aws s3 rm" in line]
+        assert len(rm_lines) == 2
+        assert " Artist / Album /" in rm_lines[0]
+        assert " Artist /" in rm_lines[1]
+
+    def test_no_empty_dir_cleanup_when_dir_still_has_files(self, tmp_path):
+        """Pas de suppression si le dossier contient encore des fichiers."""
+        conn = connect(":memory:")
+        upsert_objects(conn, [
+            _obj("dir/ photo.jpg"),
+            _obj("dir/other.jpg"),
+        ])
+        output = str(tmp_path / "clean.sh")
+        generate_clean_script(conn, "b", output=output)
+        content = (tmp_path / "clean.sh").read_text()
+        # dir/ a encore other.jpg, pas de suppression
+        assert "Suppression des dossiers vides" not in content
+
     def test_invalid_rule(self, tmp_path):
         conn = connect(":memory:")
         output = str(tmp_path / "clean.sh")
