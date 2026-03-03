@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS media_metadata (
     title       VARCHAR,
     duration_s  DOUBLE,
     codec       VARCHAR,
-    bitrate     INTEGER
+    bitrate     BIGINT
 );
 """
 
@@ -45,7 +45,19 @@ def connect(db_path: str = "s3dedup.duckdb") -> duckdb.DuckDBPyConnection:
     conn.execute(SCHEMA_OBJECTS)
     conn.execute(SCHEMA_MEDIA)
     conn.execute(SCHEMA_BUCKET_CONFIG)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: duckdb.DuckDBPyConnection) -> None:
+    """Applique les migrations de schéma sur une base existante."""
+    # Migration : bitrate INTEGER -> BIGINT
+    row = conn.execute(
+        "SELECT data_type FROM information_schema.columns "
+        "WHERE table_name = 'media_metadata' AND column_name = 'bitrate'"
+    ).fetchone()
+    if row and row[0] == "INTEGER":
+        conn.execute("ALTER TABLE media_metadata ALTER bitrate TYPE BIGINT")
 
 
 def upsert_objects(
