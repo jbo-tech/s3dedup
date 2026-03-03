@@ -115,3 +115,9 @@ Technical decisions and their context. Added via `/retro`.
 **Context**: Sur une médiathèque, les copies dégradées ont souvent des noms cassés. Le score permet de garder automatiquement le "meilleur" nom.
 **Alternatives considered**: Regex unique pour détecter les copies (trop rigide), critère binaire bon/mauvais (perd la nuance)
 **Date**: 2026-02-19
+
+### Migration automatique du schema DuckDB
+**Decision**: Fonction `_migrate()` appelée à chaque `connect()`, qui inspecte `information_schema.columns` et applique les ALTER TABLE nécessaires.
+**Context**: Le schema évolue (bitrate INTEGER → BIGINT) et les utilisateurs ont des bases existantes. `CREATE TABLE IF NOT EXISTS` ne met pas à jour les colonnes existantes. La migration doit être transparente.
+**Alternatives considered**: Script de migration séparé (oubli garanti), recréation de la table (perte de données), versioning de schema avec table de migration (surengineering pour un seul champ)
+**Date**: 2026-03-03

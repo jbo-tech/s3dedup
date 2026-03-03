@@ -1,12 +1,22 @@
 # Status
 
 ## Objective
-Outil CLI Python pour détecter les objets dupliqués dans un bucket S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
+Outil CLI Python pour dédupliquer des objets S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
 
 ## Current focus
-Nettoyage des dossiers vides après exécution du script `clean.sh`. Prêt à régénérer et relancer.
+Scan en cours avec `--extract-metadata --workers 32` sur le bucket réel. Fix du dépassement INT32 sur la colonne `bitrate`.
 
 ## Log
+
+### 2026-03-03 (session 14)
+- Done:
+  - Fix `bitrate INTEGER` → `BIGINT` dans `media_metadata` (dépassement INT32 sur fichier vidéo à ~6 Gbps)
+  - Migration automatique `_migrate()` dans `db.py` : détecte et corrige les bases existantes via `ALTER TABLE`
+  - Audit des autres colonnes numériques : `size` (BIGINT) et `duration_s` (DOUBLE) déjà corrects
+  - 182 tests OK, ruff clean
+- Next:
+  - Relancer `scan --extract-metadata --workers 32` (reprendra là où il s'est arrêté)
+  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
 
 ### 2026-03-02 (session 13)
 - Done:
@@ -65,10 +75,6 @@ Nettoyage des dossiers vides après exécution du script `clean.sh`. Prêt à r�
   - README mis à jour : section Reset, Database, dry-run simplifié
   - 2 commits poussés (feat + chore context)
   - 160 tests OK, ruff clean
-- Next:
-  - Relancer le scan sur Music-Various-Artists/ avec le fix pagination
-  - Tester `--extract-metadata` sur le bucket réel
-  - Mettre à jour scope.md
 
 ### 2026-02-21 (session 8)
 - Done:

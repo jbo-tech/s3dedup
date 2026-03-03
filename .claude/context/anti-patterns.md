@@ -63,3 +63,9 @@ Errors encountered and how to avoid them. Added via `/retro`.
 **Cause**: Par défaut, `aws s3 mv` copie toutes les propriétés (métadonnées + tags). L'opération `GetObjectTagging` n'est pas implémentée par tous les services S3-compatible.
 **Solution**: Ajouter `--copy-props metadata-directive` pour copier les métadonnées (Content-Type, dates) sans les tags. Ne pas utiliser `--copy-props none` (trop agressif, perd les métadonnées).
 **Date**: 2026-03-01
+
+### Types numériques DuckDB trop étroits
+**Problem**: Crash à mi-scan avec `Conversion Error: Type INT64 with value 6039889936 can't be cast because the value is out of range for the destination type INT32`
+**Cause**: La colonne `bitrate` était typée `INTEGER` (INT32, max ~2.1G). Des fichiers vidéo haute qualité ont des bitrates > 4 Gbps.
+**Solution**: Utiliser `BIGINT` par défaut pour toute colonne numérique susceptible de dépasser 2G. Prévoir une migration `ALTER TABLE ... ALTER ... TYPE BIGINT` pour les bases existantes (`CREATE TABLE IF NOT EXISTS` ne modifie pas le schema).
+**Date**: 2026-03-03
