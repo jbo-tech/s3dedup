@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -51,9 +52,30 @@ class StripSpacesRule(CleanRule):
         return None
 
 
+class StripBackslashesRule(CleanRule):
+    """Supprime les backslashes des clés (caractère interdit par S3/rclone)."""
+
+    name = "strip-backslashes"
+    description = "Supprime les backslashes et collapse les espaces multiples"
+
+    def apply(self, key: str) -> str | None:
+        """Retourne la clé sans backslashes, ou None si rien à changer."""
+        if "\\" not in key:
+            return None
+        cleaned = key.replace("\\", "")
+        # Collapser les espaces multiples dans chaque segment
+        segments = cleaned.split("/")
+        segments = [re.sub(r" {2,}", " ", s) for s in segments]
+        result = "/".join(segments)
+        if result != key:
+            return result
+        return None
+
+
 # Registre des règles disponibles
 AVAILABLE_RULES: dict[str, type[CleanRule]] = {
     "strip-spaces": StripSpacesRule,
+    "strip-backslashes": StripBackslashesRule,
 }
 
 
@@ -241,7 +263,7 @@ def _build_script(
             f" → '{tgt_escaped}'\""
         )
         lines.append(
-            f"aws s3 mv --copy-props metadata-directive"
+            f"aws s3 mv --copy-props none"
             f" ${{DRY_RUN:-}} $ENDPOINT"
             f" 's3://{bucket}/{src_escaped}'"
             f" 's3://{bucket}/{tgt_escaped}'"

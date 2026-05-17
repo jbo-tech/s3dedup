@@ -6,6 +6,7 @@ from datetime import datetime
 import pytest
 
 from s3dedup.cleaner import (
+    StripBackslashesRule,
     StripSpacesRule,
     _resolve_conflicts,
     generate_clean_script,
@@ -47,6 +48,35 @@ class TestStripSpacesRule:
     def test_space_only_segment(self):
         """Un segment composé uniquement d'espaces est supprimé."""
         assert self.rule.apply("dir/ /photo.jpg") == "dir/photo.jpg"
+
+
+class TestStripBackslashesRule:
+    def setup_method(self):
+        self.rule = StripBackslashesRule()
+
+    def test_escaped_quotes(self):
+        r"""Backslash avant apostrophe : Jimmy \'Bo\' Horne."""
+        assert self.rule.apply(r"Jimmy \'Bo\' Horne - Clean Up Man.flac") == \
+            "Jimmy 'Bo' Horne - Clean Up Man.flac"
+
+    def test_double_backslash_separator(self):
+        r"""Double backslash comme séparateur : A \\ B."""
+        assert self.rule.apply(
+            r"Culture Club - It's A Miracle \\ Miss Me Blind.flac"
+        ) == "Culture Club - It's A Miracle Miss Me Blind.flac"
+
+    def test_no_backslash(self):
+        """Aucun changement si pas de backslash."""
+        assert self.rule.apply("normal/path/file.flac") is None
+
+    def test_nested_path(self):
+        r"""Backslash dans un chemin multi-segments."""
+        assert self.rule.apply(r"Music/Artist/track\1.flac") == \
+            "Music/Artist/track1.flac"
+
+    def test_single_backslash(self):
+        r"""Un seul backslash supprimé."""
+        assert self.rule.apply(r"a\b.txt") == "ab.txt"
 
 
 class TestResolveConflicts:
