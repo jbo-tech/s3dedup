@@ -8,6 +8,7 @@ from rich.console import Console
 
 from s3dedup import db as database
 from s3dedup.cleaner import generate_clean_script
+from s3dedup.diagnose import find_duplicate_folders, format_report
 from s3dedup.hasher import hash_multipart_candidates
 from s3dedup.reporter import generate_report
 from s3dedup.scanner import extract_all_media_metadata, scan_bucket
@@ -268,7 +269,7 @@ def generate_script(bucket, keep, db_path, output, endpoint_url):
     help="URL du endpoint S3 (pour les services S3-compatibles).",
 )
 def clean(bucket, prefix, rules, db_path, output, endpoint_url):
-    """Générer un script de renommage pour nettoyer les clés S3."""
+    """Générer un script de renommage pour nettoyer les clés S3 (noms)."""
     try:
         conn = database.connect(db_path)
     except Exception as e:
@@ -313,6 +314,67 @@ def clean(bucket, prefix, rules, db_path, output, endpoint_url):
                 f"  cat {output}        # relire le script\n"
                 f"  bash {output}       # exécuter les renommages"
             )
+    except Exception as e:
+        console.print(f"[red]Erreur :[/red] {e}")
+        sys.exit(1)
+    finally:
+        conn.close()
+
+
+@cli.command()
+@click.option(
+    "--prefix",
+    default="Music/",
+    help="Préfixe des dossiers à analyser.",
+)
+@click.option(
+    "--depth",
+    type=int,
+    default=3,
+    help="Profondeur des dossiers (ex: 3 = genre/artiste/album).",
+)
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Format du rapport.",
+)
+@click.option(
+    "--db", "db_path",
+    default="s3dedup.duckdb",
+    help="Chemin vers la base DuckDB.",
+)
+@click.option(
+    "--output", "-o",
+    default=None,
+    help="Fichier de sortie (défaut : stdout).",
+)
+def diagnose(prefix, depth, fmt, db_path, output):
+    """Détecter les dossiers en doublon (même album, nommage différent)."""
+    try:
+        conn = database.connect(db_path)
+    except Exception as e:
+        console.print(f"[red]Erreur DB :[/red] {e}")
+        sys.exit(1)
+
+    try:
+        result = find_duplicate_folders(conn, prefix=prefix, depth=depth)
+        content = format_report(result, fmt=fmt)
+
+        if output:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(content)
+            console.print(f"[green]Rapport écrit :[/green] {output}")
+        else:
+            click.echo(content)
+
+        orphans = len(result.orphan_groups)
+        both = len(result.both_music_groups)
+        console.print(
+            f"\n[bold]{len(result.groups)}[/bold] groupes détectés :"
+            f" {orphans} orphelins (safe),"
+            f" {both} à analyser."
+        )
     except Exception as e:
         console.print(f"[red]Erreur :[/red] {e}")
         sys.exit(1)
