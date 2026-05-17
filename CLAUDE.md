@@ -7,7 +7,8 @@ Outil CLI Python pour dédupliquer des objets S3.
 uv run s3dedup scan --bucket BUCKET [--prefix PREFIX] [--endpoint-url URL] [--extract-metadata] [--db PATH]
 uv run s3dedup report [--format table|json|csv|markdown] [--output PATH] [--db PATH]
 uv run s3dedup generate-script --bucket BUCKET [--keep shortest,oldest|cleanest,...] [--endpoint-url URL] [--db PATH] [--output PATH]
-uv run s3dedup clean --bucket BUCKET [--prefix PREFIX] [--rules strip-spaces] [--endpoint-url URL] [--db PATH] [--output clean.sh]
+uv run s3dedup clean --bucket BUCKET [--prefix PREFIX] [--rules strip-spaces,strip-backslashes] [--endpoint-url URL] [--db PATH] [--output clean.sh]
+uv run s3dedup diagnose [--prefix Music/] [--depth 3] [--format table|json|csv] [--output PATH] [--db PATH]
 uv run pytest              # tests
 uv run ruff check .        # lint
 ```

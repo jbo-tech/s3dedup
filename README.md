@@ -9,7 +9,8 @@ Works with AWS S3 and S3-compatible services (Mega.io, MinIO, LocalStack, etc.).
 - **Byte-identical deduplication** — 3-pass detection (size → ETag → SHA256), incremental scans
 - **Suspect name detection** — Find files with similar names but different content (encoding issues, copy suffixes, extra spaces)
 - **Media metadata grouping** — Extract audio/video tags to find same-work-different-encoding duplicates (e.g. FLAC vs MP3)
-- **Key cleaning** — Generate rename scripts to fix leading/trailing spaces in S3 keys, with extensible rule system
+- **Key cleaning** — Generate rename scripts to fix leading/trailing spaces and backslashes in S3 keys, with extensible rule system
+- **Duplicate folder diagnosis** — Detect albums imported from multiple sources (e.g. `Album` vs `Album [ID] [year]`) and classify them for cleanup
 - **Smart retention policy** — `--keep cleanest,shortest,oldest` to automatically prefer clean filenames
 
 ## How it works
@@ -66,7 +67,12 @@ uv run s3dedup report --format json
 uv run s3dedup report --format csv
 uv run s3dedup report --format markdown --output report.md
 
-# 4. Generate a reviewable deletion script
+# 4. Diagnose duplicate folders (same album, different naming)
+uv run s3dedup diagnose
+uv run s3dedup diagnose --format json -o diagnosis.json
+uv run s3dedup diagnose --prefix "Music/Artist/" --depth 3
+
+# 5. Generate a reviewable deletion script
 uv run s3dedup generate-script --bucket my-bucket
 ```
 
@@ -144,8 +150,22 @@ uv run s3dedup clean --bucket my-bucket --rules strip-spaces     # explicit rule
 ```
 
 - **Conflict resolution**: if the target key already exists, a suffix is added (`photo_2.jpg`, `photo_3.jpg`, etc.)
-- **Extensible**: the `--rules` option accepts a comma-separated list of rules. Currently available: `strip-spaces`
+- **Extensible**: the `--rules` option accepts a comma-separated list of rules. Currently available: `strip-spaces`, `strip-backslashes`
 - **Important**: `clean` reads keys from the local DuckDB index, not from S3 directly. Always `scan` before generating the script, and rescan after running it to update the index.
+
+### Diagnosis report
+
+`diagnose` detects duplicate folders — same album imported from multiple sources with different naming conventions (e.g. `Album` vs `Album [123456] [2020]`):
+
+```bash
+uv run s3dedup diagnose                              # table report to stdout
+uv run s3dedup diagnose --format json -o diag.json   # machine-readable
+uv run s3dedup diagnose --prefix "Music/Artist/"     # limit scope
+```
+
+Results are classified into:
+- **Category A (orphans)** — folder contains only cover images, the complete version exists alongside. Safe to delete.
+- **Category B (both have music)** — both folders contain audio files. Requires manual analysis (different encodings, partial tracklists, etc.)
 
 ### Deletion script
 
@@ -173,7 +193,7 @@ The endpoint URL is saved in the database during `scan`. Subsequent commands (`c
 ## Development
 
 ```bash
-uv run pytest           # run tests (175)
+uv run pytest           # run tests (200)
 uv run ruff check .     # lint
 ```
 

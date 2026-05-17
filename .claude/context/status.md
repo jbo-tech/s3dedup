@@ -1,12 +1,40 @@
 # Status
 
 ## Objective
-Outil CLI Python pour dédupliquer des objets S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés.
+Outil CLI Python pour dédupliquer des objets S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés, diagnostic de dossiers en doublon.
 
 ## Current focus
-Scan en cours avec `--extract-metadata --workers 32` sur le bucket réel. Fix du dépassement INT32 sur la colonne `bitrate`.
+Diagnostic et nettoyage des dossiers en doublon (même album, nommage différent). Commande `diagnose` implémentée, prochaine étape : traitement automatisé des cas identifiés.
 
 ## Log
+
+### 2026-05-17 (session 16)
+- Done:
+  - Nouveau module `diagnose.py` : détection de dossiers en doublon (même album avec/sans suffixe `[ID] [année]`)
+  - Classification automatique : catégorie A (orphelins, covers seulement) vs B (les deux ont de la musique)
+  - Commande CLI `s3dedup diagnose` avec options `--prefix`, `--depth`, `--format` (table/json/csv), `--output`
+  - 13 tests dédiés, 200 tests OK, ruff clean
+  - Résultat sur le bucket réel : 92 groupes (7 orphelins safe, 85 à analyser)
+  - Changement `--copy-props metadata-directive` → `--copy-props none` dans cleaner (non commité, session 15)
+  - Règle `strip-backslashes` ajoutée dans cleaner (non commitée, session 15)
+- Context: L'utilisateur observe encore des dossiers en doublon après les passes de clean/dedup. Le problème est un niveau au-dessus : même album importé depuis deux sources (ex: Deezer avec `[ID] [année]` dans le nom vs rip sans).
+- Next:
+  - Affiner la catégorie B : comparer etags/tailles pour distinguer "même album FLAC vs MP3" de "vrais doublons"
+  - Générer un script de suppression pour les 7 orphelins catégorie A
+  - Commiter les changements (strip-backslashes, --copy-props none, diagnose)
+  - Workflow complet : `scan` → `clean` → `diagnose` → `generate-script`
+
+### 2026-03-16 (session 15)
+- Done:
+  - Nouvelle règle `StripBackslashesRule` dans `cleaner.py` : supprime les `\` des clés S3
+  - Collapse les espaces multiples résultants (ex: `\\` → double espace → simple espace)
+  - Enregistrée dans `AVAILABLE_RULES` comme `strip-backslashes`
+  - 5 tests unitaires dédiés, 27 tests cleaner OK, ruff clean
+- Context: 1052 erreurs rclone (non bloquantes) causées par 2 fichiers avec `\` dans le nom
+- Next:
+  - Régénérer `clean.sh` avec `--rules strip-spaces,strip-backslashes`
+  - Exécuter sur le bucket réel
+  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
 
 ### 2026-03-03 (session 14)
 - Done:
@@ -66,63 +94,3 @@ Scan en cours avec `--extract-metadata --workers 32` sur le bucket réel. Fix du
   - Tester `clean` sur le bucket réel (Mega.io)
   - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
   - Ajouter d'autres règles de nettoyage si besoin (unicode normalization, etc.)
-
-### 2026-02-21 (session 9)
-- Done:
-  - Persistance endpoint URL : table `bucket_config`, auto-fallback dans `generate-script`
-  - Fix dry-run : parse `$1` au lieu de variable commentée
-  - Fix pagination Mega.io : pagination manuelle remplaçant le paginateur boto3 (détection token dupliqué)
-  - README mis à jour : section Reset, Database, dry-run simplifié
-  - 2 commits poussés (feat + chore context)
-  - 160 tests OK, ruff clean
-
-### 2026-02-21 (session 8)
-- Done:
-  - Fix dry-run : le script parse maintenant `$1` (`bash delete.sh --dryrun`), plus besoin de décommenter une variable
-  - Message final adapté au mode (dry-run vs réel)
-  - README mis à jour : section Reset, section Database (3 tables), doc endpoint persisté, dry-run simplifié
-  - 160 tests OK, ruff clean
-
-### 2026-02-21 (session 7)
-- Done:
-  - Table `bucket_config` dans DuckDB (bucket → endpoint_url)
-  - `set_bucket_config()` (upsert, retourne l'ancien endpoint si changé) et `get_bucket_config()`
-  - `scan` persiste automatiquement l'endpoint après le scan
-  - `generate-script` fallback sur l'endpoint stocké si `--endpoint-url` non fourni
-  - Warning CLI si l'endpoint change entre deux scans
-  - 6 tests unitaires + 1 test e2e
-  - 160 tests OK, ruff clean
-
-### 2026-02-21 (session 6)
-- Done:
-  - Refactoring CLI : `--endpoint-url` déplacé du groupe vers les sous-commandes `scan` et `generate-script`
-  - Suppression de `@click.pass_context` / `ctx` (plus nécessaire)
-  - Les options sont maintenant librement ordonnées après la sous-commande
-  - 150 tests OK, ruff clean
-
-### 2026-02-19 (session 5)
-- Done:
-  - T0 : Schema `media_metadata` dans DuckDB, dataclass `MediaMetadata`, `MEDIA_EXTENSIONS`, fonctions `upsert_media_metadata()` et `find_metadata_groups()`
-  - T1 : Module `normalizer.py` (`normalize_name()`, `name_quality_score()`), rapport "noms suspects" dans les 3 formats, critère `--keep cleanest`
-  - T2 : Module `media.py` (extraction tags via range GET 256Ko + mutagen), `extract_all_media_metadata()` dans scanner, dépendance `mutagen>=1.47`
-  - T3 : Section "Même œuvre, encodage différent" dans les 3 formats de rapport (table, JSON, CSV)
-  - T4 : `scan --extract-metadata`, aide `--keep` mise à jour, test e2e complet
-  - Format CSV refactoré : colonnes `section, group_id, group_size, object_key, detail`
-  - 150 tests (+71), ruff clean
-
-### 2026-02-16 (session 4)
-- Done:
-  - Fix : `--endpoint-url` propagé dans le script bash généré (les `aws s3 rm` utilisent maintenant `$ENDPOINT`)
-  - README mis à jour : documentation du dry-run, syntaxe --keep, formats de rapport
-- Note: `--endpoint-url` est une option globale (avant la commande, pas après)
-- Next: Scan complet du bucket media-center, dry-run du script, puis suppression
-
-### 2026-02-16 (session 3)
-- Done: Fix objets 0 octets, rapport table rich, politique multi-critères `--keep shortest,oldest`
-- 79 tests, ruff clean
-
-### 2026-02-16 (session 2)
-- Done: --endpoint-url, README, suggestions d'étapes suivantes
-
-### 2026-02-16 (session 1)
-- Done: MVP complet (T1→T6), 65 tests

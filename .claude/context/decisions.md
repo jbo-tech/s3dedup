@@ -121,3 +121,9 @@ Technical decisions and their context. Added via `/retro`.
 **Context**: Le schema évolue (bitrate INTEGER → BIGINT) et les utilisateurs ont des bases existantes. `CREATE TABLE IF NOT EXISTS` ne met pas à jour les colonnes existantes. La migration doit être transparente.
 **Alternatives considered**: Script de migration séparé (oubli garanti), recréation de la table (perte de données), versioning de schema avec table de migration (surengineering pour un seul champ)
 **Date**: 2026-03-03
+
+### Commande diagnose : détection par pattern de nommage [ID] [année]
+**Decision**: Détection des dossiers en doublon basée sur le pattern regex `Album [ID] [année]` vs `Album` (sans suffixe). Classification en deux catégories : orphelins (covers only) et "les deux ont de la musique".
+**Context**: Après les passes clean/dedup, 92 groupes de dossiers doublons persistent. Le problème est l'import depuis plusieurs sources (Deezer ajoute `[ID] [année]` au nom des albums). Ce n'est ni un problème de nommage (cleaner) ni de fichiers byte-identiques (generate-script), c'est un niveau au-dessus : des albums sémantiquement identiques dans des dossiers différents.
+**Alternatives considered**: Comparaison par métadonnées média uniquement (nécessite extraction complète), heuristique fuzzy matching sur les noms (trop de faux positifs), merge automatique (trop risqué sans classification préalable)
+**Date**: 2026-05-17

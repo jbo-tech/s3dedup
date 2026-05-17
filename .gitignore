@@ -13,7 +13,11 @@ build/
 # Environment
 .env
 .env.*
+
+# Output
 delete_duplicates.sh
+clean.sh
+rapport.md
 
 # IDE
 .vscode/
