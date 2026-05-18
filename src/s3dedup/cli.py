@@ -420,7 +420,8 @@ def diagnose(prefix, depth, fmt, db_path, output, generate_script, bucket,
             )
             console.print(
                 f"[green]Script généré :[/green] {generate_script}\n"
-                f"{orphans} dossier(s) orphelin(s) à supprimer.\n"
+                f"{orphans} orphelin(s) actifs,"
+                f" {both} doublon(s) commentés à vérifier.\n"
             )
             console.print(
                 "[dim]Vérifier puis lancer :[/dim]\n"

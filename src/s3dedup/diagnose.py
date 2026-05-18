@@ -10,7 +10,6 @@ from enum import Enum
 
 import duckdb
 
-from s3dedup.db import get_all_keys
 from s3dedup.utils import human_size
 
 MEDIA_EXTENSIONS = frozenset({
@@ -279,21 +278,15 @@ def generate_orphan_script(
     output: str = "delete_orphans.sh",
     endpoint_url: str | None = None,
 ) -> str:
-    """Génère un script bash de suppression des dossiers orphelins (catégorie A).
+    """Génère un script bash de suppression des dossiers dupliqués.
 
+    Catégorie A (orphelins) : commandes actives.
+    Catégorie B (les deux contiennent de la musique) : commandes commentées.
     Retourne le contenu du script.
     """
     orphans = result.orphan_groups
+    both_music = result.both_music_groups
     lines: list[str] = []
-
-    # En-tête
-    lines.append("#!/usr/bin/env bash")
-    lines.append("# Script de suppression des dossiers orphelins")
-    lines.append(f"# Bucket : {bucket}")
-    lines.append(
-        f"# Généré le : {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    )
-    lines.append(f"# Dossiers orphelins : {len(orphans)}")
 
     total_files = 0
     total_size = 0
@@ -303,8 +296,19 @@ def generate_orphan_script(
             total_files += o.file_count
             total_size += o.total_size
 
-    lines.append(f"# Fichiers à supprimer : {total_files}")
-    lines.append(f"# Espace récupérable : {human_size(total_size)}")
+    lines.append("#!/usr/bin/env bash")
+    lines.append("# Script de suppression des dossiers dupliqués")
+    lines.append(f"# Bucket : {bucket}")
+    lines.append(
+        f"# Généré le : {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
+    lines.append(f"# Dossiers orphelins (catégorie A) : {len(orphans)}")
+    lines.append(
+        f"# Doublons avec musique (catégorie B) : {len(both_music)}"
+        " — commentés, à vérifier manuellement"
+    )
+    lines.append(f"# Fichiers à supprimer (cat. A) : {total_files}")
+    lines.append(f"# Espace récupérable (cat. A) : {human_size(total_size)}")
     lines.append("#")
     lines.append("# ATTENTION : Vérifiez ce script avant exécution !")
     lines.append("# Les suppressions S3 sont IRRÉVERSIBLES.")
@@ -324,51 +328,76 @@ def generate_orphan_script(
         lines.append('ENDPOINT=""')
     lines.append("")
 
-    if not orphans:
-        lines.append("echo 'Aucun dossier orphelin détecté.'")
+    if not orphans and not both_music:
+        lines.append("echo 'Aucun dossier dupliqué détecté.'")
         content = "\n".join(lines) + "\n"
         _write_script(output, content)
         return content
 
-    for i, group in enumerate(orphans, 1):
+    group_num = 0
+
+    for group in orphans:
         orphan = group.orphan
         complete = group.complete
         if not orphan or not complete:
             continue
 
-        lines.append(
-            f"# --- Groupe {i} : {group.base_name}"
-        )
+        group_num += 1
+        path_escaped = orphan.path.replace("'", "'\\''")
+        lines.append(f"# --- Groupe {group_num} : {group.base_name}")
         lines.append(
             f"# Orphelin  : {orphan.path}/"
             f" ({orphan.file_count} fichiers, {human_size(orphan.total_size)})"
         )
         lines.append(
             f"# Complet   : {complete.path}/"
-            f" ({complete.file_count} fichiers, {human_size(complete.total_size)})"
+            f" ({complete.file_count} fichiers,"
+            f" {human_size(complete.total_size)})"
         )
-
-        keys = get_all_keys(conn, prefix=orphan.path + "/")
-        for key in keys:
-            key_escaped = key.replace("'", "'\\''")
-            lines.append(
-                f"aws s3 rm ${{DRY_RUN:-}} $ENDPOINT"
-                f" 's3://{bucket}/{key_escaped}'"
-            )
+        lines.append(
+            f"aws s3 rm ${{DRY_RUN:-}} $ENDPOINT --recursive"
+            f" 's3://{bucket}/{path_escaped}/'"
+        )
         lines.append("")
 
+    if both_music:
+        lines.append(
+            "# " + "=" * 60
+        )
+        lines.append(
+            "# CATÉGORIE B — Les deux dossiers contiennent de la musique."
+        )
+        lines.append(
+            "# Décommentez le dossier à supprimer après vérification."
+        )
+        lines.append(
+            "# " + "=" * 60
+        )
+        lines.append("")
+
+        for group in both_music:
+            group_num += 1
+            lines.append(f"# --- Groupe {group_num} : {group.base_name}")
+            for f in sorted(
+                group.folders, key=lambda x: x.media_count, reverse=True,
+            ):
+                size = human_size(f.total_size)
+                path_escaped = f.path.replace("'", "'\\''")
+                lines.append(
+                    f"#   {f.path}/"
+                    f" ({f.media_count} audio,"
+                    f" {f.file_count} total, {size})"
+                )
+                lines.append(
+                    f"# aws s3 rm ${{DRY_RUN:-}} $ENDPOINT --recursive"
+                    f" 's3://{bucket}/{path_escaped}/'"
+                )
+            lines.append("")
+
     lines.append('if [[ -n "$DRY_RUN" ]]; then')
-    lines.append(
-        f"  echo 'Dry-run terminé : {total_files}"
-        f" fichiers à supprimer,"
-        f" {human_size(total_size)} récupérables.'"
-    )
+    lines.append("  echo 'Dry-run terminé.'")
     lines.append("else")
-    lines.append(
-        f"  echo 'Terminé : {total_files}"
-        f" fichiers supprimés,"
-        f" {human_size(total_size)} récupérés.'"
-    )
+    lines.append("  echo 'Terminé.'")
     lines.append("fi")
 
     content = "\n".join(lines) + "\n"

@@ -182,7 +182,7 @@ class TestFormatReport:
 
 
 class TestGenerateOrphanScript:
-    def test_generates_script_for_orphans(self, conn, tmp_path):
+    def test_uses_recursive_delete(self, conn, tmp_path):
         objects = [
             _obj("Music/Artist/Album/cover.jpg", size=50000),
             _obj("Music/Artist/Album/folder.jpg", size=40000),
@@ -197,13 +197,11 @@ class TestGenerateOrphanScript:
             result, conn, "my-bucket", output=script_path,
         )
 
-        assert "aws s3 rm" in content
-        assert "Music/Artist/Album/cover.jpg" in content
-        assert "Music/Artist/Album/folder.jpg" in content
         rm_lines = [x for x in content.splitlines() if x.startswith("aws s3 rm")]
-        assert len(rm_lines) == 2
-        for line in rm_lines:
-            assert "Album [1] [2020]" not in line
+        assert len(rm_lines) == 1
+        assert "--recursive" in rm_lines[0]
+        assert "Music/Artist/Album/'" in rm_lines[0]
+        assert "Album [1] [2020]" not in rm_lines[0]
         assert "my-bucket" in content
         assert "set -euo pipefail" in content
 
@@ -224,7 +222,23 @@ class TestGenerateOrphanScript:
 
         assert "https://s3.example.com" in content
 
-    def test_no_orphans_produces_empty_script(self, conn, tmp_path):
+    def test_no_duplicates_produces_empty_script(self, conn, tmp_path):
+        objects = [
+            _obj("Music/Artist/Album One/track.flac", size=5000000),
+            _obj("Music/Artist/Album Two [1] [2020]/track.flac", size=30000000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        content = generate_orphan_script(
+            result, conn, "my-bucket", output=script_path,
+        )
+
+        assert "aws s3 rm" not in content
+        assert "Aucun dossier dupliqué" in content
+
+    def test_both_music_included_as_comments(self, conn, tmp_path):
         objects = [
             _obj("Music/Artist/Album/01 - Track.mp3", size=5000000),
             _obj("Music/Artist/Album [1] [2020]/01 - Track.flac", size=30000000),
@@ -237,8 +251,11 @@ class TestGenerateOrphanScript:
             result, conn, "my-bucket", output=script_path,
         )
 
-        assert "aws s3 rm" not in content
-        assert "Aucun dossier orphelin" in content
+        assert "CATÉGORIE B" in content
+        assert "# aws s3 rm" in content
+        assert "--recursive" in content
+        rm_lines = [x for x in content.splitlines() if x.startswith("aws s3 rm")]
+        assert len(rm_lines) == 0
 
     def test_script_is_executable(self, conn, tmp_path):
         import os
@@ -259,7 +276,7 @@ class TestGenerateOrphanScript:
         mode = os.stat(script_path).st_mode
         assert mode & stat.S_IXUSR
 
-    def test_escapes_single_quotes_in_keys(self, conn, tmp_path):
+    def test_escapes_single_quotes_in_paths(self, conn, tmp_path):
         objects = [
             _obj("Music/Artist/It's Album/cover.jpg", size=50000),
             _obj("Music/Artist/It's Album [1] [2020]/track.flac", size=30000000),
@@ -272,7 +289,7 @@ class TestGenerateOrphanScript:
             result, conn, "my-bucket", output=script_path,
         )
 
-        assert "It'\\''s Album/cover.jpg" in content
+        assert "It'\\''s Album/'" in content
 
     def test_dryrun_support(self, conn, tmp_path):
         objects = [
