@@ -167,6 +167,15 @@ Results are classified into:
 - **Category A (orphans)** — folder contains only cover images, the complete version exists alongside. Safe to delete.
 - **Category B (both have music)** — both folders contain audio files. Requires manual analysis (different encodings, partial tracklists, etc.)
 
+To generate a deletion script for orphan folders (Category A):
+
+```bash
+uv run s3dedup diagnose --generate-script delete_orphans.sh --bucket my-bucket
+cat delete_orphans.sh           # review the script
+bash delete_orphans.sh          # execute deletions
+bash delete_orphans.sh --dryrun # preview without deleting
+```
+
 ### Deletion script
 
 `generate-script` creates an executable bash script with `aws s3 rm` commands:

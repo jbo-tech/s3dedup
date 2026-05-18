@@ -122,6 +122,12 @@ Technical decisions and their context. Added via `/retro`.
 **Alternatives considered**: Script de migration séparé (oubli garanti), recréation de la table (perte de données), versioning de schema avec table de migration (surengineering pour un seul champ)
 **Date**: 2026-03-03
 
+### Génération de script de suppression intégrée à diagnose (pas à generate-script)
+**Decision**: L'option `--generate-script` est sur la commande `diagnose`, pas sur `generate-script`. Chaque commande génère le script correspondant à son périmètre.
+**Context**: `diagnose` opère sur les dossiers (niveau sémantique), `generate-script` sur les fichiers byte-identiques (niveau binaire). Mélanger les deux dans `generate-script` aurait rendu la commande confuse. La catégorie B (les deux ont de la musique) nécessitera une logique distincte à terme.
+**Alternatives considered**: Étendre `generate-script` avec `--include-orphan-folders` (mélange deux périmètres), nouvelle commande dédiée `merge-folders` (surengineering à ce stade)
+**Date**: 2026-05-18
+
 ### Commande diagnose : détection par pattern de nommage [ID] [année]
 **Decision**: Détection des dossiers en doublon basée sur le pattern regex `Album [ID] [année]` vs `Album` (sans suffixe). Classification en deux catégories : orphelins (covers only) et "les deux ont de la musique".
 **Context**: Après les passes clean/dedup, 92 groupes de dossiers doublons persistent. Le problème est l'import depuis plusieurs sources (Deezer ajoute `[ID] [année]` au nom des albums). Ce n'est ni un problème de nommage (cleaner) ni de fichiers byte-identiques (generate-script), c'est un niveau au-dessus : des albums sémantiquement identiques dans des dossiers différents.

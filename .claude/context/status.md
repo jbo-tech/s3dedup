@@ -4,9 +4,25 @@
 Outil CLI Python pour dédupliquer des objets S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés, diagnostic de dossiers en doublon.
 
 ## Current focus
-Diagnostic et nettoyage des dossiers en doublon (même album, nommage différent). Commande `diagnose` implémentée, prochaine étape : traitement automatisé des cas identifiés.
+Le workflow `diagnose` est maintenant complet : détection + génération de script de suppression pour les orphelins. Prochaine étape : affiner la catégorie B et exécuter les scripts sur le bucket réel.
 
 ## Log
+
+### 2026-05-18 (session 17)
+- Done:
+  - Option `--generate-script` ajoutée à la commande `diagnose`
+  - Nouvelle fonction `generate_orphan_script()` dans `diagnose.py` : génère un script bash de suppression pour les dossiers orphelins (catégorie A)
+  - Script conforme au pattern existant (dry-run, endpoint, échappement quotes, exécutable)
+  - Options CLI : `--generate-script PATH`, `--bucket`, `--endpoint-url` (avec fallback DB)
+  - Suggestion d'étape suivante affichée quand des orphelins sont détectés sans `--generate-script`
+  - 6 tests dédiés, 206 tests OK, ruff clean
+  - README.md et CLAUDE.md mis à jour
+- Context: L'utilisateur a identifié un manque de cohérence dans le workflow : `diagnose` détectait les orphelins mais ne proposait aucune action. `generate-script` ne traite que les doublons fichier, pas les dossiers. Le pont manquait.
+- Next:
+  - Commiter les changements (cette session + sessions 15-16 non commitées)
+  - Exécuter `diagnose --generate-script` sur le bucket réel pour les 7 orphelins catégorie A
+  - Affiner la catégorie B : comparer etags/tailles pour distinguer "même album FLAC vs MP3" de "vrais doublons"
+  - Workflow complet : `scan` → `clean` → `scan` → `diagnose --generate-script` → `generate-script`
 
 ### 2026-05-17 (session 16)
 - Done:
