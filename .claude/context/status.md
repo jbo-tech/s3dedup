@@ -4,9 +4,25 @@
 Outil CLI Python pour dédupliquer des objets S3. Au-delà de la déduplication byte-identique : normalisation des noms, extraction de métadonnées média, politique de rétention enrichie, nettoyage des clés, diagnostic de dossiers en doublon.
 
 ## Current focus
-Le workflow `diagnose` est maintenant complet : détection + génération de script de suppression pour les orphelins. Prochaine étape : affiner la catégorie B et exécuter les scripts sur le bucket réel.
+Le workflow `diagnose --generate-script` est amélioré : suppression par dossier (`--recursive`) au lieu de fichier par fichier, et les doublons catégorie B sont maintenant inclus commentés pour review manuelle.
 
 ## Log
+
+### 2026-05-18 (session 18)
+- Done:
+  - Suppression par dossier (`aws s3 rm --recursive`) au lieu de fichier par fichier dans `generate_orphan_script()`
+  - Import `get_all_keys` supprimé (plus nécessaire)
+  - Catégorie B (BOTH_MUSIC) incluse dans le script, commentée, avec stats par variante
+  - Le script est maintenant un outil de review complet : cat A active, cat B commentée à décommenter
+  - Message CLI mis à jour pour refléter les deux catégories
+  - Tests mis à jour : `test_uses_recursive_delete`, `test_both_music_included_as_comments`, `test_no_duplicates_produces_empty_script`, `test_escapes_single_quotes_in_paths`
+  - 207 tests OK, ruff clean
+- Context: L'utilisateur a testé `diagnose --generate-script` sur le bucket réel (102 groupes : 4 orphelins, 98 à analyser). Deux remarques : le script ne traitait que les 4 orphelins, et la suppression fichier par fichier est inutilement granulaire quand on supprime un dossier entier.
+- Next:
+  - Commiter les changements
+  - Régénérer le script sur le bucket réel et vérifier la sortie complète (102 groupes)
+  - Review manuelle des 98 groupes catégorie B dans le script généré
+  - Exécuter le script (dry-run d'abord)
 
 ### 2026-05-18 (session 17)
 - Done:
@@ -85,28 +101,3 @@ Le workflow `diagnose` est maintenant complet : détection + génération de scr
   - Relancer `scan --extract-metadata` sur le bucket réel avec le parallélisme
   - Ajuster `--workers` selon la perf observée (32 → 64 si le réseau le permet)
   - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
-
-### 2026-03-01 (session 11)
-- Done:
-  - Diagnostic erreur `GetObjectTagging` sur Mega S4 lors de `aws s3 mv`
-  - Test réel avec `--copy-props metadata-directive` sur fichier `TV/ test.txt` → succès
-  - Fix appliqué dans `cleaner.py` : ajout `--copy-props metadata-directive` aux commandes `aws s3 mv` générées
-  - 20 tests cleaner OK
-- Next:
-  - Régénérer `clean.sh` et relancer sur le bucket réel
-  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
-  - Ajouter d'autres règles de nettoyage si besoin (unicode normalization, etc.)
-
-### 2026-03-01 (session 10)
-- Done:
-  - Commande `clean` : génère un script bash de renommage (`aws s3 mv`) pour nettoyer les clés S3
-  - Architecture extensible par règles : `CleanRule` ABC + `StripSpacesRule` (espaces début/fin par segment)
-  - Détection et résolution de conflits : suffixage automatique (`_2`, `_3`...) si la cible existe déjà
-  - `get_all_keys()` ajouté à `db.py`
-  - 20 tests dédiés dans `test_cleaner.py`
-  - CLAUDE.md mis à jour (section Commands)
-  - 175 tests OK, ruff clean
-- Next:
-  - Tester `clean` sur le bucket réel (Mega.io)
-  - Workflow complet : `scan` → `clean` → `scan` → `report` / `generate-script`
-  - Ajouter d'autres règles de nettoyage si besoin (unicode normalization, etc.)

@@ -128,6 +128,12 @@ Technical decisions and their context. Added via `/retro`.
 **Alternatives considered**: Étendre `generate-script` avec `--include-orphan-folders` (mélange deux périmètres), nouvelle commande dédiée `merge-folders` (surengineering à ce stade)
 **Date**: 2026-05-18
 
+### Suppression par dossier (--recursive) et catégorie B commentée dans le script
+**Decision**: Utiliser `aws s3 rm --recursive` sur le préfixe du dossier au lieu de lister chaque fichier. Inclure les groupes catégorie B (les deux ont de la musique) dans le script, mais commentés.
+**Context**: Le script fichier par fichier était inutilement verbeux et fragile (scan incomplet = fichiers oubliés). Un dossier orphelin est une entité : on le supprime en bloc. Pour la catégorie B, l'utilisateur veut un script unique à reviewer : il décommente les lignes qu'il valide manuellement.
+**Alternatives considered**: Script séparé pour la catégorie B (deux fichiers à gérer), outil interactif de review (surengineering)
+**Date**: 2026-05-18
+
 ### Commande diagnose : détection par pattern de nommage [ID] [année]
 **Decision**: Détection des dossiers en doublon basée sur le pattern regex `Album [ID] [année]` vs `Album` (sans suffixe). Classification en deux catégories : orphelins (covers only) et "les deux ont de la musique".
 **Context**: Après les passes clean/dedup, 92 groupes de dossiers doublons persistent. Le problème est l'import depuis plusieurs sources (Deezer ajoute `[ID] [année]` au nom des albums). Ce n'est ni un problème de nommage (cleaner) ni de fichiers byte-identiques (generate-script), c'est un niveau au-dessus : des albums sémantiquement identiques dans des dossiers différents.
