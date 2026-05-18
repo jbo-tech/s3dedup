@@ -12,6 +12,7 @@ from s3dedup.diagnose import (
     _group_by_base_name,
     find_duplicate_folders,
     format_report,
+    generate_orphan_script,
 )
 from s3dedup.models import ObjectInfo
 
@@ -178,3 +179,113 @@ class TestFormatReport:
         lines = output.strip().split("\n")
         assert lines[0].startswith("category,")
         assert len(lines) == 3  # header + 2 folders
+
+
+class TestGenerateOrphanScript:
+    def test_generates_script_for_orphans(self, conn, tmp_path):
+        objects = [
+            _obj("Music/Artist/Album/cover.jpg", size=50000),
+            _obj("Music/Artist/Album/folder.jpg", size=40000),
+            _obj("Music/Artist/Album [1] [2020]/01 - Track.flac", size=30000000),
+            _obj("Music/Artist/Album [1] [2020]/cover.jpg", size=400000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        content = generate_orphan_script(
+            result, conn, "my-bucket", output=script_path,
+        )
+
+        assert "aws s3 rm" in content
+        assert "Music/Artist/Album/cover.jpg" in content
+        assert "Music/Artist/Album/folder.jpg" in content
+        rm_lines = [x for x in content.splitlines() if x.startswith("aws s3 rm")]
+        assert len(rm_lines) == 2
+        for line in rm_lines:
+            assert "Album [1] [2020]" not in line
+        assert "my-bucket" in content
+        assert "set -euo pipefail" in content
+
+    def test_script_with_endpoint_url(self, conn, tmp_path):
+        objects = [
+            _obj("Music/Artist/Album/cover.jpg", size=50000),
+            _obj("Music/Artist/Album [1] [2020]/track.flac", size=30000000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        content = generate_orphan_script(
+            result, conn, "my-bucket",
+            output=script_path,
+            endpoint_url="https://s3.example.com",
+        )
+
+        assert "https://s3.example.com" in content
+
+    def test_no_orphans_produces_empty_script(self, conn, tmp_path):
+        objects = [
+            _obj("Music/Artist/Album/01 - Track.mp3", size=5000000),
+            _obj("Music/Artist/Album [1] [2020]/01 - Track.flac", size=30000000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        content = generate_orphan_script(
+            result, conn, "my-bucket", output=script_path,
+        )
+
+        assert "aws s3 rm" not in content
+        assert "Aucun dossier orphelin" in content
+
+    def test_script_is_executable(self, conn, tmp_path):
+        import os
+        import stat
+
+        objects = [
+            _obj("Music/Artist/Album/cover.jpg", size=50000),
+            _obj("Music/Artist/Album [1] [2020]/track.flac", size=30000000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        generate_orphan_script(
+            result, conn, "my-bucket", output=script_path,
+        )
+
+        mode = os.stat(script_path).st_mode
+        assert mode & stat.S_IXUSR
+
+    def test_escapes_single_quotes_in_keys(self, conn, tmp_path):
+        objects = [
+            _obj("Music/Artist/It's Album/cover.jpg", size=50000),
+            _obj("Music/Artist/It's Album [1] [2020]/track.flac", size=30000000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        content = generate_orphan_script(
+            result, conn, "my-bucket", output=script_path,
+        )
+
+        assert "It'\\''s Album/cover.jpg" in content
+
+    def test_dryrun_support(self, conn, tmp_path):
+        objects = [
+            _obj("Music/Artist/Album/cover.jpg", size=50000),
+            _obj("Music/Artist/Album [1] [2020]/track.flac", size=30000000),
+        ]
+        upsert_objects(conn, objects)
+        result = find_duplicate_folders(conn, prefix="Music/", depth=3)
+
+        script_path = str(tmp_path / "delete.sh")
+        content = generate_orphan_script(
+            result, conn, "my-bucket", output=script_path,
+        )
+
+        assert "${DRY_RUN:-}" in content
+        assert "--dryrun" in content

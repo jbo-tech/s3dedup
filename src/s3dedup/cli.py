@@ -8,7 +8,11 @@ from rich.console import Console
 
 from s3dedup import db as database
 from s3dedup.cleaner import generate_clean_script
-from s3dedup.diagnose import find_duplicate_folders, format_report
+from s3dedup.diagnose import (
+    find_duplicate_folders,
+    format_report,
+    generate_orphan_script,
+)
 from s3dedup.hasher import hash_multipart_candidates
 from s3dedup.reporter import generate_report
 from s3dedup.scanner import extract_all_media_metadata, scan_bucket
@@ -349,8 +353,31 @@ def clean(bucket, prefix, rules, db_path, output, endpoint_url):
     default=None,
     help="Fichier de sortie (défaut : stdout).",
 )
-def diagnose(prefix, depth, fmt, db_path, output):
+@click.option(
+    "--generate-script",
+    default=None,
+    help="Génère un script de suppression des orphelins (catégorie A).",
+)
+@click.option(
+    "--bucket",
+    default=None,
+    help="Nom du bucket S3 (requis avec --generate-script).",
+)
+@click.option(
+    "--endpoint-url",
+    envvar="AWS_ENDPOINT_URL",
+    default=None,
+    help="URL du endpoint S3 (pour les services S3-compatibles).",
+)
+def diagnose(prefix, depth, fmt, db_path, output, generate_script, bucket,
+             endpoint_url):
     """Détecter les dossiers en doublon (même album, nommage différent)."""
+    if generate_script and not bucket:
+        console.print(
+            "[red]Erreur :[/red] --bucket est requis avec --generate-script."
+        )
+        sys.exit(1)
+
     try:
         conn = database.connect(db_path)
     except Exception as e:
@@ -358,6 +385,15 @@ def diagnose(prefix, depth, fmt, db_path, output):
         sys.exit(1)
 
     try:
+        # Fallback sur l'endpoint stocké lors du scan
+        if bucket and not endpoint_url:
+            stored = database.get_bucket_config(conn, bucket)
+            if stored:
+                endpoint_url = stored
+                console.print(
+                    f"[dim]Endpoint depuis le scan :[/dim] {endpoint_url}"
+                )
+
         result = find_duplicate_folders(conn, prefix=prefix, depth=depth)
         content = format_report(result, fmt=fmt)
 
@@ -375,6 +411,31 @@ def diagnose(prefix, depth, fmt, db_path, output):
             f" {orphans} orphelins (safe),"
             f" {both} à analyser."
         )
+
+        if generate_script:
+            generate_orphan_script(
+                result, conn, bucket,
+                output=generate_script,
+                endpoint_url=endpoint_url,
+            )
+            console.print(
+                f"[green]Script généré :[/green] {generate_script}\n"
+                f"{orphans} dossier(s) orphelin(s) à supprimer.\n"
+            )
+            console.print(
+                "[dim]Vérifier puis lancer :[/dim]\n"
+                f"  cat {generate_script}"
+                f"        # relire le script\n"
+                f"  bash {generate_script}"
+                f"       # exécuter les suppressions"
+            )
+        elif orphans > 0:
+            console.print(
+                "\n[dim]Pour générer un script de suppression"
+                " des orphelins :[/dim]\n"
+                f"  s3dedup diagnose --generate-script delete_orphans.sh"
+                f" --bucket BUCKET --db {db_path}"
+            )
     except Exception as e:
         console.print(f"[red]Erreur :[/red] {e}")
         sys.exit(1)

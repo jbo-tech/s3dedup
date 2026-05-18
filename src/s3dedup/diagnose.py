@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 
 import duckdb
+
+from s3dedup.db import get_all_keys
+from s3dedup.utils import human_size
 
 MEDIA_EXTENSIONS = frozenset({
     ".flac", ".mp3", ".ogg", ".m4a", ".wav", ".opus", ".aac", ".wma",
@@ -265,6 +270,117 @@ def _format_json(result: DiagnoseResult) -> str:
             ],
         })
     return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def generate_orphan_script(
+    result: DiagnoseResult,
+    conn: duckdb.DuckDBPyConnection,
+    bucket: str,
+    output: str = "delete_orphans.sh",
+    endpoint_url: str | None = None,
+) -> str:
+    """Génère un script bash de suppression des dossiers orphelins (catégorie A).
+
+    Retourne le contenu du script.
+    """
+    orphans = result.orphan_groups
+    lines: list[str] = []
+
+    # En-tête
+    lines.append("#!/usr/bin/env bash")
+    lines.append("# Script de suppression des dossiers orphelins")
+    lines.append(f"# Bucket : {bucket}")
+    lines.append(
+        f"# Généré le : {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
+    lines.append(f"# Dossiers orphelins : {len(orphans)}")
+
+    total_files = 0
+    total_size = 0
+    for g in orphans:
+        o = g.orphan
+        if o:
+            total_files += o.file_count
+            total_size += o.total_size
+
+    lines.append(f"# Fichiers à supprimer : {total_files}")
+    lines.append(f"# Espace récupérable : {human_size(total_size)}")
+    lines.append("#")
+    lines.append("# ATTENTION : Vérifiez ce script avant exécution !")
+    lines.append("# Les suppressions S3 sont IRRÉVERSIBLES.")
+    lines.append("#")
+    lines.append("")
+    lines.append("set -euo pipefail")
+    lines.append("")
+    lines.append("# Dry-run : bash delete_orphans.sh --dryrun")
+    lines.append('DRY_RUN=""')
+    lines.append('if [[ "${1:-}" == "--dryrun" ]]; then')
+    lines.append('  DRY_RUN="--dryrun"')
+    lines.append('  echo "Mode dry-run : aucune suppression effective."')
+    lines.append("fi")
+    if endpoint_url:
+        lines.append(f'ENDPOINT="--endpoint-url {endpoint_url}"')
+    else:
+        lines.append('ENDPOINT=""')
+    lines.append("")
+
+    if not orphans:
+        lines.append("echo 'Aucun dossier orphelin détecté.'")
+        content = "\n".join(lines) + "\n"
+        _write_script(output, content)
+        return content
+
+    for i, group in enumerate(orphans, 1):
+        orphan = group.orphan
+        complete = group.complete
+        if not orphan or not complete:
+            continue
+
+        lines.append(
+            f"# --- Groupe {i} : {group.base_name}"
+        )
+        lines.append(
+            f"# Orphelin  : {orphan.path}/"
+            f" ({orphan.file_count} fichiers, {human_size(orphan.total_size)})"
+        )
+        lines.append(
+            f"# Complet   : {complete.path}/"
+            f" ({complete.file_count} fichiers, {human_size(complete.total_size)})"
+        )
+
+        keys = get_all_keys(conn, prefix=orphan.path + "/")
+        for key in keys:
+            key_escaped = key.replace("'", "'\\''")
+            lines.append(
+                f"aws s3 rm ${{DRY_RUN:-}} $ENDPOINT"
+                f" 's3://{bucket}/{key_escaped}'"
+            )
+        lines.append("")
+
+    lines.append('if [[ -n "$DRY_RUN" ]]; then')
+    lines.append(
+        f"  echo 'Dry-run terminé : {total_files}"
+        f" fichiers à supprimer,"
+        f" {human_size(total_size)} récupérables.'"
+    )
+    lines.append("else")
+    lines.append(
+        f"  echo 'Terminé : {total_files}"
+        f" fichiers supprimés,"
+        f" {human_size(total_size)} récupérés.'"
+    )
+    lines.append("fi")
+
+    content = "\n".join(lines) + "\n"
+    _write_script(output, content)
+    return content
+
+
+def _write_script(path: str, content: str) -> None:
+    """Écrit le script et le rend exécutable."""
+    with open(path, "w") as f:
+        f.write(content)
+    os.chmod(path, 0o755)
 
 
 def _format_csv(result: DiagnoseResult) -> str:
